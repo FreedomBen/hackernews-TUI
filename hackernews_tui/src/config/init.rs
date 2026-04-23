@@ -43,6 +43,41 @@ pub fn write_default_config(path: &Path, flavor: ConfigFlavor) -> anyhow::Result
     Ok(())
 }
 
+/// Replace the `[theme]` table in the user's config with the one from the
+/// embedded default for `flavor`, preserving all other sections and any
+/// comments outside the theme table.
+///
+/// Errors if `path` does not exist — callers should direct the user to
+/// `--init-config` in that case.
+pub fn update_theme_in_place(path: &Path, flavor: ConfigFlavor) -> anyhow::Result<()> {
+    if !path.exists() {
+        anyhow::bail!(
+            "config file {} does not exist; run with --init-config <light|dark> to create one first",
+            path.display()
+        );
+    }
+
+    let existing_str = std::fs::read_to_string(path)?;
+    let mut existing: toml_edit::DocumentMut = existing_str
+        .parse()
+        .map_err(|err| anyhow::anyhow!("failed to parse existing config: {err}"))?;
+
+    let default: toml_edit::DocumentMut = flavor
+        .contents()
+        .parse()
+        .map_err(|err| anyhow::anyhow!("failed to parse embedded default config: {err}"))?;
+
+    let default_theme = default
+        .get("theme")
+        .ok_or_else(|| anyhow::anyhow!("embedded default is missing the [theme] table"))?
+        .clone();
+
+    existing["theme"] = default_theme;
+
+    std::fs::write(path, existing.to_string())?;
+    Ok(())
+}
+
 /// Outcome of [`prompt_for_auth`].
 pub enum AuthPromptResult {
     /// The user declined to log in. No file should be written.
@@ -169,5 +204,85 @@ mod tests {
         assert_eq!(contents, DARK_CONFIG);
 
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    fn update_theme_tmp(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "hackernews_tui_update_theme_test_{}_{suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn update_theme_errors_when_config_missing() {
+        let path = update_theme_tmp("missing");
+        let _ = std::fs::remove_file(&path);
+
+        let err = update_theme_in_place(&path, ConfigFlavor::Dark)
+            .expect_err("should error when config file does not exist");
+        let msg = format!("{err:#}");
+        assert!(msg.contains("does not exist"), "unexpected error: {msg}");
+        assert!(msg.contains("--init-config"), "unexpected error: {msg}");
+    }
+
+    #[test]
+    fn update_theme_replaces_theme_and_preserves_other_sections() {
+        let path = update_theme_tmp("replaces");
+        let _ = std::fs::remove_file(&path);
+
+        let original = r##"# user comment above general
+use_page_scrolling = false
+client_timeout = 99
+
+[theme.palette]
+background = "#123456"
+foreground = "#abcdef"
+
+[keymap.global_keymap]
+quit = "Q"
+"##;
+        std::fs::write(&path, original).unwrap();
+
+        update_theme_in_place(&path, ConfigFlavor::Dark).expect("update should succeed");
+
+        let updated = std::fs::read_to_string(&path).unwrap();
+
+        // Theme values now come from the dark default.
+        assert!(
+            updated.contains(r##"background = "#1d1f21""##),
+            "expected dark background, got:\n{updated}"
+        );
+        // Old theme values are gone.
+        assert!(
+            !updated.contains("#123456"),
+            "old palette leaked through:\n{updated}"
+        );
+        // Non-theme sections and top-level comment are preserved.
+        assert!(updated.contains("# user comment above general"));
+        assert!(updated.contains("use_page_scrolling = false"));
+        assert!(updated.contains("client_timeout = 99"));
+        assert!(updated.contains(r##"quit = "Q""##));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn update_theme_adds_theme_when_missing() {
+        let path = update_theme_tmp("adds");
+        let _ = std::fs::remove_file(&path);
+
+        let original = "client_timeout = 10\n";
+        std::fs::write(&path, original).unwrap();
+
+        update_theme_in_place(&path, ConfigFlavor::Light).expect("update should succeed");
+
+        let updated = std::fs::read_to_string(&path).unwrap();
+        assert!(updated.contains("client_timeout = 10"));
+        assert!(
+            updated.contains("[theme.palette]") || updated.contains("palette"),
+            "expected theme section to be added:\n{updated}"
+        );
+
+        std::fs::remove_file(&path).ok();
     }
 }

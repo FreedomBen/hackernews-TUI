@@ -110,6 +110,19 @@ fn parse_args(config_dir: std::path::PathBuf, cache_dir: std::path::PathBuf) -> 
                 .help("Write a default config file to the --config path then exit (light or dark)")
                 .next_line_help(true),
         )
+        .arg(
+            Arg::new("update_theme")
+                .long("update-theme")
+                .value_name("THEME")
+                .value_parser(["light", "dark"])
+                .conflicts_with("init_config")
+                .help(
+                    "Replace the [theme] section of the existing --config file with the latest \
+                     default (light or dark) then exit. Other sections and surrounding comments \
+                     are preserved.",
+                )
+                .next_line_help(true),
+        )
         .get_matches()
 }
 
@@ -185,6 +198,25 @@ fn main() {
             Err(err) => {
                 eprintln!(
                     "Failed to write config to {}: {err:#}",
+                    config_path.display()
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if let Some(theme) = args.get_one::<String>("update_theme") {
+        let flavor: config::ConfigFlavor = theme
+            .parse()
+            .expect("clap value_parser restricts this to 'light' or 'dark'");
+        match config::update_theme_in_place(config_path, flavor) {
+            Ok(()) => {
+                println!("Updated {theme} theme in {}", config_path.display());
+                std::process::exit(0);
+            }
+            Err(err) => {
+                eprintln!(
+                    "Failed to update theme in {}: {err:#}",
                     config_path.display()
                 );
                 std::process::exit(1);

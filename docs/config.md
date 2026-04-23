@@ -8,6 +8,8 @@ Two example config files (with some default config values) ship with the project
 
 To generate a config file, run `hackernews_tui --init-config light` (or `--init-config dark` for the dark palette). It writes the chosen default to the `--config` path (or its resolved default under the user's config directory) and exits. If the config file is missing when the application launches interactively, the first-run prompt will also offer to create one; answering `s` (skip) leaves the filesystem untouched and uses built-in defaults. The prompt only fires when both stdin and stdout are TTYs, so non-interactive runs always fall through to the built-in defaults.
 
+To refresh the theme in an existing config without touching keymaps or other sections, run `hackernews_tui --update-theme light` (or `--update-theme dark`). It replaces the `[theme]` table of the file at the `--config` path with the corresponding embedded default and preserves everything else, including comments. The flag errors out if the config file does not exist — use `--init-config` in that case. `--update-theme` and `--init-config` are mutually exclusive.
+
 ## Table of Contents
 
 - [General](#general)

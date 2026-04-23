@@ -278,6 +278,13 @@ hackernews_tui --init-config light
 hackernews_tui -c ~/.config/hn-tui.toml --init-config dark
 ```
 
+To pull in newer theme defaults without losing customizations elsewhere, use `--update-theme <light|dark>`. It replaces only the `[theme]` section of the existing `--config` file, leaving keymap, general settings, and surrounding comments in place. It errors out if the config file does not exist (use `--init-config` to create one first).
+
+```shell
+# refresh the dark theme in the default config file
+hackernews_tui --update-theme dark
+```
+
 User can also specify the path to config file when running the application with `-c` or `--config` option.
 
 ```shell
