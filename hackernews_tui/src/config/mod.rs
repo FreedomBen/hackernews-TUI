@@ -158,6 +158,26 @@ impl Auth {
     }
 }
 
+/// If `path` is an auth file written by an older version (no `session = `
+/// line), rewrite it in the current annotated format so the cookie-paste
+/// guidance is visible the next time the user opens it. Returns `true` when
+/// a rewrite happened.
+///
+/// The match is deliberately conservative: any `session =` line (even one
+/// the user has already edited or blanked out) is treated as "already
+/// migrated" so we never overwrite intentional hand-edits. Only a file that
+/// has never carried the field at all gets upgraded.
+pub fn backport_auth_file(path: &std::path::Path, auth: &Auth) -> anyhow::Result<bool> {
+    let existing = std::fs::read_to_string(path)?;
+    let already_has_session =
+        regex::Regex::new(r"(?m)^\s*session\s*=").is_ok_and(|rg| rg.is_match(&existing));
+    if already_has_session {
+        return Ok(false);
+    }
+    auth.write_to_file(path)?;
+    Ok(true)
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Command {
     pub command: String,
@@ -289,6 +309,52 @@ mod tests {
         // And the round-trip still works: empty session normalises to None.
         let parsed = Auth::from_file(&path).expect("read should succeed");
         assert_eq!(parsed.session, None);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn backport_rewrites_legacy_file_with_session_line() {
+        // Old files (v0.13 and earlier) only had `username`/`password` —
+        // backport should replay them through the annotated writer so the
+        // user sees the cookie-paste guidance.
+        let path = tmp_path("backport_legacy");
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, "username = \"bob\"\npassword = \"pw\"\n")
+            .expect("seed write should succeed");
+
+        let auth = super::Auth::from_file(&path).expect("read should succeed");
+        let rewrote = super::backport_auth_file(&path, &auth).expect("backport should succeed");
+        assert!(rewrote, "expected legacy file to be rewritten");
+
+        let new_body = std::fs::read_to_string(&path).expect("read should succeed");
+        assert!(
+            new_body.contains("session = \"\""),
+            "expected empty session placeholder, got:\n{new_body}"
+        );
+        assert!(
+            new_body.contains("news.ycombinator.com"),
+            "expected cookie-paste guidance, got:\n{new_body}"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn backport_noops_when_session_line_already_present() {
+        // If the file already has a session line — empty or populated —
+        // don't touch it, so user edits (and existing caches) are preserved.
+        let path = tmp_path("backport_noop");
+        let _ = std::fs::remove_file(&path);
+        let body = "username = \"bob\"\npassword = \"pw\"\nsession = \"\"\n";
+        std::fs::write(&path, body).expect("seed write should succeed");
+
+        let auth = super::Auth::from_file(&path).expect("read should succeed");
+        let rewrote = super::backport_auth_file(&path, &auth).expect("backport should succeed");
+        assert!(!rewrote, "expected already-migrated file to be left alone");
+
+        let unchanged = std::fs::read_to_string(&path).expect("read should succeed");
+        assert_eq!(unchanged, body);
 
         std::fs::remove_file(&path).ok();
     }

@@ -158,7 +158,20 @@ fn init_auth(auth_path: &std::path::Path) -> Option<config::Auth> {
     }
 
     match config::Auth::from_file(auth_path) {
-        Ok(auth) => Some(auth),
+        Ok(auth) => {
+            match config::backport_auth_file(auth_path, &auth) {
+                Ok(true) => tracing::info!(
+                    "Upgraded {} to the current auth-file format (added session line)",
+                    auth_path.display()
+                ),
+                Ok(false) => {}
+                Err(err) => tracing::warn!(
+                    "Failed to upgrade auth file {} in place: {err:#}",
+                    auth_path.display()
+                ),
+            }
+            Some(auth)
+        }
         Err(err) => {
             tracing::warn!(
                 "Failed to get authentication from {}: {err}",
