@@ -102,6 +102,14 @@ fn parse_args(config_dir: std::path::PathBuf, cache_dir: std::path::PathBuf) -> 
                 .help("The Hacker News item's id to start the application with")
                 .next_line_help(true),
         )
+        .arg(
+            Arg::new("init_config")
+                .long("init-config")
+                .value_name("THEME")
+                .value_parser(["light", "dark"])
+                .help("Write a default config file to the --config path then exit (light or dark)")
+                .next_line_help(true),
+        )
         .get_matches()
 }
 
@@ -138,10 +146,43 @@ fn main() {
             .expect("`log` argument should have a default value"),
     );
 
-    config::load_config(
-        args.get_one::<String>("config")
-            .expect("`config` argument should have a default value"),
-    );
+    let config_file_str = args
+        .get_one::<String>("config")
+        .expect("`config` argument should have a default value");
+    let config_path = std::path::Path::new(config_file_str);
+
+    if let Some(theme) = args.get_one::<String>("init_config") {
+        let flavor: config::ConfigFlavor = theme
+            .parse()
+            .expect("clap value_parser restricts this to 'light' or 'dark'");
+        match config::write_default_config(config_path, flavor) {
+            Ok(()) => {
+                println!("Wrote default {theme} config to {}", config_path.display());
+                std::process::exit(0);
+            }
+            Err(err) => {
+                eprintln!(
+                    "Failed to write config to {}: {err:#}",
+                    config_path.display()
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
+    if !config_path.exists() {
+        if let Some(flavor) = config::prompt_for_flavor() {
+            match config::write_default_config(config_path, flavor) {
+                Ok(()) => println!("Wrote config to {}", config_path.display()),
+                Err(err) => eprintln!(
+                    "Failed to write config to {}: {err:#}",
+                    config_path.display()
+                ),
+            }
+        }
+    }
+
+    config::load_config(config_file_str);
 
     let auth = init_auth(
         args.get_one::<String>("auth")

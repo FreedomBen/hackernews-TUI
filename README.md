@@ -265,7 +265,17 @@ By default, `hackernews-tui` will look for the `hn-tui.toml` user-defined config
 - the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html)
 - `.config` directory inside the [user's home directory](https://docs.rs/dirs-next/latest/dirs_next/fn.home_dir.html)
 
-If not found such file, the application will fall back to use a set of [default configurations](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml).
+If no such file is found and the application is launched from an interactive terminal, it will prompt to write a default config (light or dark). You can skip the prompt and the application will fall back to a set of [default configurations](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml).
+
+To bypass the prompt, use `--init-config` to write a default config and exit:
+
+```shell
+# write a default light-theme config to the default --config path
+hackernews_tui --init-config light
+
+# or pick a specific path and the dark variant
+hackernews_tui -c ~/.config/hn-tui.toml --init-config dark
+```
 
 User can also specify the path to config file when running the application with `-c` or `--config` option.
 

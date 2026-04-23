@@ -1,8 +1,10 @@
 // modules
+mod init;
 mod keybindings;
 mod theme;
 
 // re-export
+pub use init::*;
 pub use keybindings::*;
 pub use theme::*;
 

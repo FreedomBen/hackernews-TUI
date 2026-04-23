@@ -6,6 +6,8 @@ User can change the application's configurations by modifying the user's config 
 
 An example config file (with some default config values) can be found in [example `hn-tui.toml`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml).
 
+To generate a config file, run `hackernews_tui --init-config light` (or `--init-config dark` for the dark palette). It writes the chosen default to the `--config` path (or its resolved default) and exits. If the config file is missing when the application launches interactively, it will also prompt whether to create one.
+
 ## Table of Contents
 
 - [General](#general)
