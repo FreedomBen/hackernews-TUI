@@ -446,12 +446,20 @@ fn get_story_view_title_bar(tag: &'static str, sort_mode: client::StorySortMode)
     }
     title.append_styled(" | ", style);
 
+    let user_info = utils::build_user_info_text(style.into());
+
     PaddedView::lrtb(
         0,
         0,
         0,
         1,
-        Layer::with_color(TextView::new(title), style.into()),
+        Layer::with_color(
+            LinearLayout::horizontal()
+                .child(TextView::new(title))
+                .child(TextView::new(StyledString::new()).full_width())
+                .child(TextView::new(user_info)),
+            style.into(),
+        ),
     )
 }
 

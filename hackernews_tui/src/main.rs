@@ -241,22 +241,29 @@ fn main() {
     // then installed as the global so the session cookies carry over.
     let hn_client =
         client::HNClient::with_timeout(config.client_timeout).expect("failed to build HN client");
+    let mut user_info: Option<client::UserInfo> = None;
     if let Some(auth) = &auth {
         match hn_client.login(&auth.username, &auth.password) {
             Err(err) => tracing::warn!("Failed to login, user={}: {err}", auth.username),
             Ok(()) => {
+                let profile = hn_client.fetch_profile_info(&auth.username);
                 if config.use_hn_topcolor {
-                    if let Some(hex) = hn_client.fetch_topcolor(&auth.username) {
-                        if config.theme.apply_hn_topcolor(&hex) {
+                    if let Some(hex) = profile.topcolor.as_deref() {
+                        if config.theme.apply_hn_topcolor(hex) {
                             tracing::info!("Applied HN topcolor override: #{hex}");
                         }
                     }
                 }
+                user_info = Some(client::UserInfo {
+                    username: auth.username.clone(),
+                    karma: profile.karma,
+                });
             }
         }
     }
 
     config::init_config(config);
+    client::init_user_info(user_info);
     let client = client::install_client(hn_client);
 
     let start_id = args.get_one::<u32>("start_id").cloned();

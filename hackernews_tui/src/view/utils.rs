@@ -29,13 +29,35 @@ pub fn construct_footer_view<T: help_view::HasHelpView>() -> impl View {
         )
 }
 
+/// Build the "username (karma)" styled text rendered at the right edge of a
+/// title bar, or an empty string when there's no logged-in user. The HN
+/// website shows the same thing in its top-right nav area.
+pub fn build_user_info_text(style: Style) -> StyledString {
+    match client::get_user_info() {
+        None => StyledString::new(),
+        Some(info) => {
+            let text = match info.karma {
+                Some(k) => format!(" {} ({}) ", info.username, k),
+                None => format!(" {} ", info.username),
+            };
+            StyledString::styled(text, style)
+        }
+    }
+}
+
 /// Construct a view's title bar
 pub fn construct_view_title_bar(desc: &str) -> impl View {
     let style = config::get_config_theme().component_style.title_bar;
+    let user_info = build_user_info_text(style.into());
+
     Layer::with_color(
-        TextView::new(StyledString::styled(desc, style))
-            .h_align(align::HAlign::Center)
-            .full_width(),
+        LinearLayout::horizontal()
+            .child(
+                TextView::new(StyledString::styled(desc, style))
+                    .h_align(align::HAlign::Center)
+                    .full_width(),
+            )
+            .child(TextView::new(user_info)),
         style.into(),
     )
 }

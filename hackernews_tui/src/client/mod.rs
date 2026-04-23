@@ -23,6 +23,30 @@ pub const SEARCH_LIMIT: usize = 15;
 
 static CLIENT: once_cell::sync::OnceCell<HNClient> = once_cell::sync::OnceCell::new();
 
+/// Global slot for the logged-in user's display info. `None` means either no
+/// credentials were configured or login failed — views should treat both the
+/// same way and render nothing on the right of the title bar.
+static USER_INFO: once_cell::sync::OnceCell<Option<UserInfo>> = once_cell::sync::OnceCell::new();
+
+/// Summary of the logged-in HN user, mirrored into views' title bars.
+///
+/// `karma` is optional because the profile fetch is best-effort: a network
+/// failure or a surprise HTML change shouldn't block startup, so we just
+/// render the username on its own in that case.
+#[derive(Debug, Clone)]
+pub struct UserInfo {
+    pub username: String,
+    pub karma: Option<u32>,
+}
+
+/// Parsed fields from a HN user profile page. Both are optional so the parser
+/// can return a useful result even when HN tweaks its markup.
+#[derive(Debug, Default, Clone)]
+pub struct ProfileInfo {
+    pub topcolor: Option<String>,
+    pub karma: Option<u32>,
+}
+
 /// HNClient is a HTTP client to communicate with Hacker News APIs.
 #[derive(Clone)]
 pub struct HNClient {
@@ -530,14 +554,16 @@ impl HNClient {
         Ok(())
     }
 
-    /// Fetch the logged-in user's `topcolor` from their HN profile page.
+    /// Fetch the logged-in user's profile page and return the parsed
+    /// `topcolor` and `karma` together.
     ///
     /// Requires that [`login`](Self::login) has already succeeded on this
-    /// client so session cookies are attached. Returns the 6-char hex string
-    /// (without `#`), or `None` when the request fails or the value is
-    /// missing/malformed. All failures are logged and swallowed — the caller
-    /// is expected to fall back to the configured theme colour.
-    pub fn fetch_topcolor(&self, username: &str) -> Option<String> {
+    /// client so session cookies are attached (the `topcolor` field only
+    /// renders on the user's own profile). Both fields are best-effort:
+    /// request failures and missing/malformed values are logged and
+    /// swallowed, so a failed parse still lets the rest of the app start
+    /// up cleanly.
+    pub fn fetch_profile_info(&self, username: &str) -> ProfileInfo {
         let url = format!("{HN_HOST_URL}/user?id={username}");
         let body = log!(
             match self.client.get(&url).call() {
@@ -545,17 +571,20 @@ impl HNClient {
                     Ok(body) => body,
                     Err(err) => {
                         warn!("failed to read {url}: {err}");
-                        return None;
+                        return ProfileInfo::default();
                     }
                 },
                 Err(err) => {
                     warn!("failed to fetch {url}: {err}");
-                    return None;
+                    return ProfileInfo::default();
                 }
             },
-            format!("fetch HN profile for topcolor (user={username})")
+            format!("fetch HN profile (user={username})")
         );
-        parse_topcolor_from_profile(&body)
+        ProfileInfo {
+            topcolor: parse_topcolor_from_profile(&body),
+            karma: parse_karma_from_profile(&body),
+        }
     }
 }
 
@@ -680,6 +709,19 @@ fn parse_vote_data_from_content(page_content: &str) -> Result<HashMap<String, Vo
 /// `<input name="topcolor" value="ff6600">` (attribute order and quoting
 /// vary). This parses any near-by 6-char hex value bound to the `topcolor`
 /// input in either order, case-insensitively.
+/// Extract the `karma` value from the HTML of a HN user's profile page.
+///
+/// HN renders karma in a two-cell table row: `<td>karma:</td><td>123</td>`.
+/// The number may be surrounded by whitespace and the `<td>` tags may carry
+/// extra attributes, so we match loosely. Returns `None` if the pattern
+/// isn't present or the number doesn't fit in a `u32`.
+fn parse_karma_from_profile(html: &str) -> Option<u32> {
+    let rg =
+        regex::Regex::new(r"(?is)<td[^>]*>\s*karma:\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>").ok()?;
+    let cap = rg.captures(html)?;
+    cap.get(1)?.as_str().parse::<u32>().ok()
+}
+
 fn parse_topcolor_from_profile(html: &str) -> Option<String> {
     // Match `name="topcolor" value="XXXXXX"` and the reverse attribute order.
     // Quotes are optional to tolerate HN's minimal-HTML quirks.
@@ -696,6 +738,23 @@ fn parse_topcolor_from_profile(html: &str) -> Option<String> {
     cap.get(1)
         .or_else(|| cap.get(2))
         .map(|m| m.as_str().to_ascii_lowercase())
+}
+
+/// Record the logged-in user's display info for views to read later.
+///
+/// Must be called at most once during startup, after the login attempt has
+/// resolved. Pass `None` when the user isn't logged in; views use that to
+/// decide whether to render anything on the right side of the title bar.
+pub fn init_user_info(info: Option<UserInfo>) {
+    USER_INFO.set(info).unwrap_or_else(|_| {
+        panic!("user info has already been initialised");
+    });
+}
+
+/// Returns the logged-in user's display info, or `None` if there's no
+/// authenticated session (either no credentials configured or login failed).
+pub fn get_user_info() -> Option<&'static UserInfo> {
+    USER_INFO.get().and_then(|opt| opt.as_ref())
 }
 
 pub fn init_client() -> &'static HNClient {
@@ -725,7 +784,8 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_login_response, parse_topcolor_from_profile, parse_vote_data_from_content,
+        classify_login_response, parse_karma_from_profile, parse_topcolor_from_profile,
+        parse_vote_data_from_content,
     };
     use crate::model::VoteDirection;
 
@@ -868,5 +928,32 @@ mod tests {
     fn returns_none_when_value_is_malformed() {
         let html = r#"<input name="topcolor" value="not-a-color">"#;
         assert_eq!(parse_topcolor_from_profile(html), None);
+    }
+
+    #[test]
+    fn parses_karma_from_profile_row() {
+        // Shape of HN's profile page: two `<td>` cells, the value optionally
+        // padded with whitespace.
+        let html = r#"<tr><td>user:</td><td>pg</td></tr><tr><td>karma:</td><td> 12345 </td></tr>"#;
+        assert_eq!(parse_karma_from_profile(html), Some(12345));
+    }
+
+    #[test]
+    fn parses_karma_with_attribute_on_td() {
+        // HN sometimes renders `<td valign=top>` or similar — match loosely.
+        let html = r#"<tr><td valign="top">karma:</td><td>67</td></tr>"#;
+        assert_eq!(parse_karma_from_profile(html), Some(67));
+    }
+
+    #[test]
+    fn returns_none_when_karma_missing() {
+        let html = r#"<tr><td>user:</td><td>pg</td></tr>"#;
+        assert_eq!(parse_karma_from_profile(html), None);
+    }
+
+    #[test]
+    fn returns_none_when_karma_not_a_number() {
+        let html = r#"<tr><td>karma:</td><td>abc</td></tr>"#;
+        assert_eq!(parse_karma_from_profile(html), None);
     }
 }
