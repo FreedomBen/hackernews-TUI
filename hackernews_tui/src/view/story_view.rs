@@ -377,6 +377,25 @@ pub fn construct_story_main_view(
             move |s| comment_view::construct_and_add_new_comment_view(s, client, item_id, false)
         }))
     })
+    // Reply to the focused story. Same mechanism as the comment view's
+    // reply keybind: stash a PendingAction and quit; main::run's outer
+    // loop handles the editor spawn and HN POST. `return_to_id` points
+    // at the story itself so the TUI re-opens on its comment view where
+    // the just-posted reply will appear (after Algolia propagation).
+    .on_pre_event_inner(story_view_keymap.reply.clone(), |s, _| {
+        let id = s.get_focus_index();
+        let story = s.stories[id].clone();
+        let parent_id = story.id;
+        let parent_content = HnItem::from(story).plain_text();
+        Some(EventResult::with_cb(move |siv| {
+            siv.set_user_data(crate::reply_editor::PendingAction::ReplyTo {
+                parent_id,
+                parent_content: parent_content.clone(),
+                return_to_id: parent_id,
+            });
+            siv.quit();
+        }))
+    })
     // vote shortcuts
     .on_pre_event_inner(story_view_keymap.upvote, move |s, _| {
         s.apply_vote(VoteDirection::Up, client);

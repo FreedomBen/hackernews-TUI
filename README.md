@@ -204,6 +204,7 @@ For more information about configuring the application's key mappings or definin
 | `open_story_in_browser`        | Open in browser the focused story                                                  | `s`              |
 | `upvote`                       | Toggle upvoting the focused story (**requires [authentication](#authentication)**) | `v`              |
 | `downvote`                     | Toggle downvoting the focused story (**requires downvote privilege**)              | `V`              |
+| `reply`                        | Reply to the focused story in `$EDITOR` (**requires [authentication](#authentication)**) | `r`        |
 | `next_page`                    | Go to the next page                                                                | `n`              |
 | `prev_page`                    | Go the previous page                                                               | `p`              |
 | `cycle_sort_mode`              | Cycle story sort mode                                                              | `d`              |

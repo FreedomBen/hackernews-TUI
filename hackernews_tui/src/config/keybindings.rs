@@ -154,6 +154,7 @@ pub struct StoryViewKeyMap {
 
     pub upvote: Keys,
     pub downvote: Keys,
+    pub reply: Keys,
 }
 
 impl Default for StoryViewKeyMap {
@@ -177,6 +178,7 @@ impl Default for StoryViewKeyMap {
 
             upvote: Keys::new(vec!['v'.into()]),
             downvote: Keys::new(vec!['V'.into()]),
+            reply: Keys::new(vec!['r'.into()]),
         }
     }
 }

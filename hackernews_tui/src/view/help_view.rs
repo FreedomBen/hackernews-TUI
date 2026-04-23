@@ -358,6 +358,10 @@ impl HasHelpView for story_view::StoryView {
                             story_view_keymap.downvote.to_string(),
                             "Toggle downvoting the focused story (requires downvote privilege)",
                         ),
+                        Command::new(
+                            story_view_keymap.reply.to_string(),
+                            "Reply to the focused story in $EDITOR (requires authentication)",
+                        ),
                     ],
                     default_other_commands(),
                 ]
