@@ -346,7 +346,23 @@ impl HasHelpView for story_view::StoryView {
                 .concat(),
             ),
             CommandGroup::new("Scrolling", default_scroll_commands()),
-            CommandGroup::new("Others", default_other_commands()),
+            CommandGroup::new(
+                "Others",
+                [
+                    vec![
+                        Command::new(
+                            story_view_keymap.upvote.to_string(),
+                            "Toggle upvoting the focused story",
+                        ),
+                        Command::new(
+                            story_view_keymap.downvote.to_string(),
+                            "Toggle downvoting the focused story (requires downvote privilege)",
+                        ),
+                    ],
+                    default_other_commands(),
+                ]
+                .concat(),
+            ),
         ])
     }
 }
@@ -529,7 +545,23 @@ impl HasHelpView for search_view::SearchView {
                 ]
                 .concat(),
             ),
-            CommandGroup::new("Others", default_other_commands()),
+            CommandGroup::new(
+                "Others",
+                [
+                    vec![
+                        Command::new(
+                            story_view_keymap.upvote.to_string(),
+                            "Toggle upvoting the focused story",
+                        ),
+                        Command::new(
+                            story_view_keymap.downvote.to_string(),
+                            "Toggle downvoting the focused story (requires downvote privilege)",
+                        ),
+                    ],
+                    default_other_commands(),
+                ]
+                .concat(),
+            ),
         ])
     }
 }

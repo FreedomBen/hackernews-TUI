@@ -191,20 +191,22 @@ For more information about configuring the application's key mappings or definin
 
 #### Story View shortcuts
 
-| Command                        | Description                                           | Default Shortcut |
-| ------------------------------ | ----------------------------------------------------- | ---------------- |
-| `next_story`                   | Focus the next story                                  | `j`              |
-| `prev_story`                   | Focus the previous story                              | `k`              |
-| `next_story_tag`               | Go to the next story tag                              | `l`              |
-| `previous_story_tag`           | Go to the previous story tag                          | `h`              |
-| `goto_story`                   | Focus the {story_id}-th story                         | `{story_id} g`   |
-| `goto_story_comment_view`      | Go the comment view associated with the focused story | `enter`          |
-| `open_article_in_browser`      | Open in browser the focused story's article           | `o`              |
-| `open_article_in_article_view` | Open in article view the focused story's article      | `O`              |
-| `open_story_in_browser`        | Open in browser the focused story                     | `s`              |
-| `next_page`                    | Go to the next page                                   | `n`              |
-| `prev_page`                    | Go the previous page                                  | `p`              |
-| `cycle_sort_mode`              | Cycle story sort mode                                 | `d`              |
+| Command                        | Description                                                                        | Default Shortcut |
+| ------------------------------ | ---------------------------------------------------------------------------------- | ---------------- |
+| `next_story`                   | Focus the next story                                                               | `j`              |
+| `prev_story`                   | Focus the previous story                                                           | `k`              |
+| `next_story_tag`               | Go to the next story tag                                                           | `l`              |
+| `previous_story_tag`           | Go to the previous story tag                                                       | `h`              |
+| `goto_story`                   | Focus the {story_id}-th story                                                      | `{story_id} g`   |
+| `goto_story_comment_view`      | Go the comment view associated with the focused story                              | `enter`          |
+| `open_article_in_browser`      | Open in browser the focused story's article                                        | `o`              |
+| `open_article_in_article_view` | Open in article view the focused story's article                                   | `O`              |
+| `open_story_in_browser`        | Open in browser the focused story                                                  | `s`              |
+| `upvote`                       | Toggle upvoting the focused story (**requires [authentication](#authentication)**) | `v`              |
+| `downvote`                     | Toggle downvoting the focused story (**requires downvote privilege**)              | `V`              |
+| `next_page`                    | Go to the next page                                                                | `n`              |
+| `prev_page`                    | Go the previous page                                                               | `p`              |
+| `cycle_sort_mode`              | Cycle story sort mode                                                              | `d`              |
 
 #### Article View shortcuts
 

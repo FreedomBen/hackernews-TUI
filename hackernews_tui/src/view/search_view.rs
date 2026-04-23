@@ -44,7 +44,10 @@ impl SearchView {
                     )))
                     .child(EditableTextView::new()),
             )
-            .child(story_view::construct_story_main_view(vec![], client, 0).full_height());
+            .child(
+                story_view::construct_story_main_view(vec![], client, 0, cb_sink.clone())
+                    .full_height(),
+            );
 
         Self {
             mode: SearchViewMode::Search,
@@ -131,7 +134,13 @@ impl SearchView {
         self.view.remove_child(1);
         let starting_id = client::SEARCH_LIMIT * self.page;
         self.view.add_child(
-            story_view::construct_story_main_view(stories, self.client, starting_id).full_height(),
+            story_view::construct_story_main_view(
+                stories,
+                self.client,
+                starting_id,
+                self.cb_sink.clone(),
+            )
+            .full_height(),
         );
         // the old Story View is deleted hence losing the current focus,
         // we need to place the focus back to the new Story View

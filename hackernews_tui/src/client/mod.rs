@@ -503,6 +503,19 @@ impl HNClient {
         parse_vote_data_from_content(page_content)
     }
 
+    /// Fetch the HN item page for a single item and return its [`VoteData`].
+    ///
+    /// Used by views that don't pre-load vote state (e.g. the story list)
+    /// to lazily discover the auth token + current vote direction the first
+    /// time the user tries to vote on a given item. Returns `Ok(None)` when
+    /// HN doesn't render any vote links for the item (typically: the user
+    /// isn't logged in, or the item doesn't accept votes).
+    pub fn get_vote_data_for_item(&self, item_id: u32) -> Result<Option<VoteData>> {
+        let content = self.get_page_content(item_id)?;
+        let mut map = self.parse_vote_data(&content)?;
+        Ok(map.remove(&item_id.to_string()))
+    }
+
     /// Apply (or rescind) a vote on a HN item.
     ///
     /// `new_vote = Some(dir)` sends `how=up|down` to HN. `new_vote = None`

@@ -143,6 +143,9 @@ pub struct StoryViewKeyMap {
     pub open_story_in_browser: Keys,
 
     pub goto_story_comment_view: Keys,
+
+    pub upvote: Keys,
+    pub downvote: Keys,
 }
 
 impl Default for StoryViewKeyMap {
@@ -163,6 +166,9 @@ impl Default for StoryViewKeyMap {
             open_story_in_browser: Keys::new(vec!['s'.into()]),
 
             goto_story_comment_view: Keys::new(vec![event::Key::Enter.into()]),
+
+            upvote: Keys::new(vec!['v'.into()]),
+            downvote: Keys::new(vec!['V'.into()]),
         }
     }
 }

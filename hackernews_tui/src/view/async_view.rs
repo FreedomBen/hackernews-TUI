@@ -31,18 +31,21 @@ pub fn construct_story_view_async(
     page: usize,
     numeric_filters: client::StoryNumericFilters,
 ) -> impl View {
+    let cb_sink = siv.cb_sink().clone();
     AsyncView::new_with_bg_creator(
         siv,
         move || Ok(client.get_stories_by_tag(tag, sort_mode, page, numeric_filters)),
         move |result| {
+            let cb_sink = cb_sink.clone();
             ResultView::new(
                 result.with_context(|| {
                     format!(
                         "failed to get stories (tag={tag}, sort_mode={sort_mode:?}, page={page}, numeric_filters={{{numeric_filters}}})",
                     )
                 }),
-                |stories| {
-                    story_view::construct_story_view(stories, client, tag, sort_mode, page, numeric_filters)
+                move |stories| {
+                    let cb_sink = cb_sink.clone();
+                    story_view::construct_story_view(stories, client, tag, sort_mode, page, numeric_filters, cb_sink)
                 },
             )
         },
