@@ -61,6 +61,8 @@ ask_hn = { front = "red", effect = "bold" }
 tell_hn = { front = "yellow", effect = "bold" }
 show_hn = { front = "blue", effect = "bold" }
 launch_hn = { front = "green", effect = "bold" }
+upvote = { front = "green" }
+downvote = { front = "red" }
 
 # ---------------------------------
 # keymap

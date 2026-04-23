@@ -432,8 +432,12 @@ impl HasHelpView for comment_view::CommentView {
                             "Toggle collapsing the focused item",
                         ),
                         Command::new(
-                            comment_view_keymap.vote.to_string(),
-                            "Toggle voting the focused item",
+                            comment_view_keymap.upvote.to_string(),
+                            "Toggle upvoting the focused item",
+                        ),
+                        Command::new(
+                            comment_view_keymap.downvote.to_string(),
+                            "Toggle downvoting the focused item (requires downvote privilege)",
                         ),
                     ],
                     default_other_commands(),

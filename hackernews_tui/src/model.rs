@@ -52,10 +52,30 @@ pub struct PageData {
     pub vote_state: HashMap<String, VoteData>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoteDirection {
+    Up,
+    Down,
+}
+
+impl VoteDirection {
+    /// The `how` query parameter value expected by HN's `/vote` endpoint.
+    pub fn as_how_param(self) -> &'static str {
+        match self {
+            Self::Up => "up",
+            Self::Down => "down",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VoteData {
     pub auth: String,
-    pub upvoted: bool,
+    /// The user's current vote on this item, or `None` if they haven't voted.
+    pub vote: Option<VoteDirection>,
+    /// True when HN rendered a downvote arrow for this item — i.e. the logged-in
+    /// user has the karma to downvote and the item is downvote-eligible.
+    pub can_downvote: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -245,19 +265,37 @@ impl Story {
 
 impl HnItem {
     /// gets the dispay text of the item, which depends on the item's states
-    /// (e.g `vote_status`, `display_state`, etc)
-    pub fn text(&self, vote_status: Option<bool>) -> StyledString {
+    /// (e.g `vote`, `display_state`, etc)
+    pub fn text(&self, vote: Option<&VoteData>) -> StyledString {
         let theme = config::get_config_theme();
+        let component_style = &theme.component_style;
 
         let text = match self.display_state {
             DisplayState::Hidden => unreachable!("Hidden item's text shouldn't be accessed"),
             DisplayState::Minimized => self.minimized_text.clone(),
             DisplayState::Normal => self.text.clone(),
         };
-        let vote_text = match vote_status {
-            Some(true) => StyledString::styled("▲ ", theme.palette.green),
-            Some(false) => StyledString::plain("▲ "),
+        let vote_text = match vote {
             None => StyledString::plain(""),
+            Some(v) => {
+                let mut s = StyledString::new();
+                if v.vote == Some(VoteDirection::Up) {
+                    s.append_styled("▲", component_style.upvote);
+                } else {
+                    s.append_plain("▲");
+                }
+                // Render the down arrow only when the user has downvote
+                // privileges for this item (or already downvoted it).
+                if v.can_downvote || v.vote == Some(VoteDirection::Down) {
+                    if v.vote == Some(VoteDirection::Down) {
+                        s.append_styled("▼", component_style.downvote);
+                    } else {
+                        s.append_plain("▼");
+                    }
+                }
+                s.append_plain(" ");
+                s
+            }
         };
 
         utils::combine_styled_strings([vote_text, text])

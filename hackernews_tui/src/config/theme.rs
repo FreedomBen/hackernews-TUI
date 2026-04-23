@@ -117,6 +117,8 @@ pub struct ComponentStyle {
     pub tell_hn: Style,
     pub show_hn: Style,
     pub launch_hn: Style,
+    pub upvote: Style,
+    pub downvote: Style,
 }
 
 impl Default for Palette {
@@ -191,6 +193,8 @@ impl Default for ComponentStyle {
             launch_hn: Style::default()
                 .front(Color::parse("green"))
                 .effect(Effect::Bold),
+            upvote: Style::default().front(Color::parse("green")),
+            downvote: Style::default().front(Color::parse("red")),
         }
     }
 }

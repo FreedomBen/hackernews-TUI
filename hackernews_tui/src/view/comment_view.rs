@@ -32,11 +32,8 @@ impl CommentView {
                     0,
                     1,
                     text_view::TextView::new(
-                        data.root_item.text(
-                            data.vote_state
-                                .get(&data.root_item.id.to_string())
-                                .map(|v| v.upvoted),
-                        ),
+                        data.root_item
+                            .text(data.vote_state.get(&data.root_item.id.to_string())),
                     ),
                 )))
                 .scrollable(),
@@ -133,11 +130,48 @@ impl CommentView {
         }
     }
 
-    fn get_vote_status(&self, item_id: u32) -> Option<bool> {
-        self.data
-            .vote_state
-            .get(&item_id.to_string())
-            .map(|v| v.upvoted)
+    fn get_vote_status(&self, item_id: u32) -> Option<&VoteData> {
+        self.data.vote_state.get(&item_id.to_string())
+    }
+
+    /// Toggle or apply a vote in the given direction for the currently
+    /// focused item. The HTTP request runs on a background thread and the
+    /// UI reflects the new vote immediately (optimistic update); a failed
+    /// request is logged but the local state is not rolled back.
+    fn apply_vote(&mut self, direction: VoteDirection, client: &'static client::HNClient) -> bool {
+        let id = self.get_focus_index();
+        let item_id = self.items[id].id;
+
+        let (new_vote, auth) = {
+            let Some(vd) = self.data.vote_state.get_mut(&item_id.to_string()) else {
+                return false;
+            };
+            // Ignore downvote attempts on items the user lacks privilege for.
+            if direction == VoteDirection::Down
+                && !vd.can_downvote
+                && vd.vote != Some(VoteDirection::Down)
+            {
+                return false;
+            }
+            // Re-pressing the same direction rescinds the vote; anything
+            // else replaces the current vote with the new direction.
+            let new_vote = if vd.vote == Some(direction) {
+                None
+            } else {
+                Some(direction)
+            };
+            vd.vote = new_vote;
+            (new_vote, vd.auth.clone())
+        };
+
+        std::thread::spawn(move || {
+            if let Err(err) = client.vote(item_id, &auth, new_vote) {
+                tracing::error!("Failed to vote HN item (id={item_id}): {err}");
+            }
+        });
+
+        self.update_item_text_content(id);
+        true
     }
 
     fn get_item_view(&self, id: usize) -> &SingleItemView {
@@ -287,29 +321,12 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
             // because of its pre-defined `on_event` function
             Some(EventResult::Ignored)
         })
-        .on_pre_event_inner(comment_view_keymap.vote, |s, _| {
-            let id = s.get_focus_index();
-            let item = &s.items[id];
-            if let Some(VoteData { auth, upvoted }) =
-                s.data.vote_state.get_mut(&item.id.to_string())
-            {
-                std::thread::spawn({
-                    let id = item.id;
-                    let upvoted = *upvoted;
-                    let auth = auth.clone();
-                    let client = client.clone();
-                    move || {
-                        if let Err(err) = client.vote(id, &auth, upvoted) {
-                            tracing::error!("Failed to vote HN item (id={id}): {err}");
-                        }
-                    }
-                });
-
-                // assume the vote request always succeeds because we don't want users
-                // to feel a delay as a result of the request's latency when voting.
-                *upvoted = !(*upvoted);
-                s.update_item_text_content(id);
-            }
+        .on_pre_event_inner(comment_view_keymap.upvote, move |s, _| {
+            s.apply_vote(VoteDirection::Up, client);
+            Some(EventResult::Consumed(None))
+        })
+        .on_pre_event_inner(comment_view_keymap.downvote, move |s, _| {
+            s.apply_vote(VoteDirection::Down, client);
             Some(EventResult::Consumed(None))
         })
         // comment navigation shortcuts

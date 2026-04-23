@@ -496,55 +496,25 @@ impl HNClient {
 
     /// Parse vote data of items in a page.
     ///
-    /// The vote data is represented by a hashmap from `id` to a struct consisting of
-    /// `auth` and `upvoted` (false=no vote, true=has vote), in which `id` is
-    /// is an item's id and `auth` is a string for authentication purpose when voting.
+    /// Returns a map from item id to a [`VoteData`] describing the user's
+    /// current vote (if any), the available downvote privilege, and the
+    /// auth token needed to submit future vote requests.
     pub fn parse_vote_data(&self, page_content: &str) -> Result<HashMap<String, VoteData>> {
-        let upvote_rg =
-            regex::Regex::new("<a.*?id='up_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
-        let unvote_rg =
-            regex::Regex::new("<a.*?id='un_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
-
-        let mut hm = HashMap::new();
-
-        upvote_rg.captures_iter(page_content).for_each(|c| {
-            let id = c.name("id").unwrap().as_str().to_owned();
-            let auth = c.name("auth").unwrap().as_str().to_owned();
-            hm.insert(
-                id,
-                VoteData {
-                    auth,
-                    upvoted: false,
-                },
-            );
-        });
-
-        unvote_rg.captures_iter(page_content).for_each(|c| {
-            let id = c.name("id").unwrap().as_str().to_owned();
-            let auth = c.name("auth").unwrap().as_str().to_owned();
-            hm.insert(
-                id,
-                VoteData {
-                    auth,
-                    upvoted: true,
-                },
-            );
-        });
-
-        Ok(hm)
+        parse_vote_data_from_content(page_content)
     }
 
-    /// Vote a HN item.
+    /// Apply (or rescind) a vote on a HN item.
     ///
-    /// Depending on the vote status (`upvoted`), the function will make
-    /// either an "upvote" or "unvote" request.
-    pub fn vote(&self, id: u32, auth: &str, upvoted: bool) -> Result<()> {
+    /// `new_vote = Some(dir)` sends `how=up|down` to HN. `new_vote = None`
+    /// sends `how=un` to rescind whatever vote the user currently holds.
+    pub fn vote(&self, id: u32, auth: &str, new_vote: Option<VoteDirection>) -> Result<()> {
         log!(
             {
-                let vote_url = format!(
-                    "{HN_HOST_URL}/vote?id={id}&how={}&auth={auth}",
-                    if !upvoted { "up" } else { "un" }
-                );
+                let how = match new_vote {
+                    Some(dir) => dir.as_how_param(),
+                    None => "un",
+                };
+                let vote_url = format!("{HN_HOST_URL}/vote?id={id}&how={how}&auth={auth}");
                 self.client.get(&vote_url).call()?;
             },
             format!("vote HN item (id={id})")
@@ -579,6 +549,85 @@ impl HNClient {
         );
         parse_topcolor_from_profile(&body)
     }
+}
+
+/// Parse vote data out of a rendered HN item page.
+///
+/// HN's HTML exposes three anchor ids per voteable item:
+///
+/// - `up_<id>`   — present when the user hasn't upvoted (can still upvote)
+/// - `down_<id>` — present when the user hasn't downvoted and has the
+///   karma/privilege to downvote this particular item
+/// - `un_<id>`   — present when the user has already voted; clicking it
+///   rescinds the vote (direction is implicit)
+///
+/// We reconstruct the user's current vote by checking which of the up/down
+/// arrows got "consumed" (replaced by the `un` link): if `un_<id>` and
+/// `down_<id>` are both present but `up_<id>` is not, the user upvoted; the
+/// mirror case means they downvoted. `can_downvote` tracks whether HN
+/// rendered a downvote link for this item — i.e. the user has the privilege.
+fn parse_vote_data_from_content(page_content: &str) -> Result<HashMap<String, VoteData>> {
+    let upvote_rg = regex::Regex::new("<a.*?id='up_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
+    let downvote_rg =
+        regex::Regex::new("<a.*?id='down_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
+    let unvote_rg = regex::Regex::new("<a.*?id='un_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
+
+    #[derive(Default)]
+    struct Flags {
+        has_up: bool,
+        has_down: bool,
+        has_un: bool,
+        auth: String,
+    }
+
+    let mut flags: HashMap<String, Flags> = HashMap::new();
+    let mut record = |rg: &regex::Regex, mark: fn(&mut Flags)| {
+        for c in rg.captures_iter(page_content) {
+            let id = c.name("id").unwrap().as_str().to_owned();
+            let auth = c.name("auth").unwrap().as_str().to_owned();
+            let entry = flags.entry(id).or_default();
+            mark(entry);
+            if !auth.is_empty() {
+                entry.auth = auth;
+            }
+        }
+    };
+    record(&upvote_rg, |f| f.has_up = true);
+    record(&downvote_rg, |f| f.has_down = true);
+    record(&unvote_rg, |f| f.has_un = true);
+
+    let hm = flags
+        .into_iter()
+        .map(|(id, f)| {
+            let (vote, can_downvote) = match (f.has_up, f.has_down, f.has_un) {
+                // Not voted, both arrows rendered → can upvote or downvote.
+                (true, true, false) => (None, true),
+                // Not voted, only upvote arrow → no downvote privilege.
+                (true, false, false) => (None, false),
+                // Voted, downvote arrow still rendered → upvoted (up arrow
+                // was consumed by the `un` link).
+                (false, true, true) => (Some(VoteDirection::Up), true),
+                // Voted, upvote arrow still rendered → downvoted.
+                (true, false, true) => (Some(VoteDirection::Down), true),
+                // Voted, no arrows left → user lacks downvote privilege, so
+                // the vote must be an upvote.
+                (false, false, true) => (Some(VoteDirection::Up), false),
+                // Any other combination is unexpected; fall back to the
+                // conservative "not voted" reading.
+                _ => (None, f.has_down),
+            };
+            (
+                id,
+                VoteData {
+                    auth: f.auth,
+                    vote,
+                    can_downvote,
+                },
+            )
+        })
+        .collect();
+
+    Ok(hm)
 }
 
 /// Extract the `topcolor` value from the HTML of a HN user's profile page.
@@ -631,7 +680,75 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_topcolor_from_profile;
+    use super::{parse_topcolor_from_profile, parse_vote_data_from_content};
+    use crate::model::VoteDirection;
+
+    #[test]
+    fn parses_unvoted_item_with_downvote_privilege() {
+        let html = concat!(
+            "<a id='up_1' href='vote?id=1&amp;how=up&amp;auth=aaa111'>x</a>",
+            "<a id='down_1' href='vote?id=1&amp;how=down&amp;auth=aaa111'>x</a>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("1").expect("expected vote data for id=1");
+        assert_eq!(v.vote, None);
+        assert!(v.can_downvote);
+        assert_eq!(v.auth, "aaa111");
+    }
+
+    #[test]
+    fn parses_unvoted_item_without_downvote_privilege() {
+        let html = "<a id='up_2' href='vote?id=2&amp;how=up&amp;auth=bbb222'>x</a>";
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("2").expect("expected vote data for id=2");
+        assert_eq!(v.vote, None);
+        assert!(!v.can_downvote);
+    }
+
+    #[test]
+    fn parses_upvoted_item_with_downvote_privilege() {
+        // After upvoting, HN removes the `up_<id>` link, leaves `down_<id>`,
+        // and adds the `un_<id>` rescind link.
+        let html = concat!(
+            "<a id='down_3' href='vote?id=3&amp;how=down&amp;auth=ccc333'>x</a>",
+            "<a id='un_3' href='vote?id=3&amp;how=un&amp;auth=ccc333'>unvote</a>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("3").expect("expected vote data for id=3");
+        assert_eq!(v.vote, Some(VoteDirection::Up));
+        assert!(v.can_downvote);
+    }
+
+    #[test]
+    fn parses_downvoted_item() {
+        // Mirror of the upvoted case: the `down_<id>` arrow was replaced by
+        // the `un_<id>` link while `up_<id>` is still available.
+        let html = concat!(
+            "<a id='up_4' href='vote?id=4&amp;how=up&amp;auth=ddd444'>x</a>",
+            "<a id='un_4' href='vote?id=4&amp;how=un&amp;auth=ddd444'>unvote</a>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("4").expect("expected vote data for id=4");
+        assert_eq!(v.vote, Some(VoteDirection::Down));
+        assert!(v.can_downvote);
+    }
+
+    #[test]
+    fn parses_upvoted_item_without_downvote_privilege() {
+        // User without downvote karma who already upvoted: only `un_<id>`.
+        let html = "<a id='un_5' href='vote?id=5&amp;how=un&amp;auth=eee555'>unvote</a>";
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("5").expect("expected vote data for id=5");
+        assert_eq!(v.vote, Some(VoteDirection::Up));
+        assert!(!v.can_downvote);
+    }
+
+    #[test]
+    fn ignores_items_without_any_vote_link() {
+        let html = "<tr><td>just a comment row with no vote links</td></tr>";
+        let data = parse_vote_data_from_content(html).unwrap();
+        assert!(data.is_empty());
+    }
 
     #[test]
     fn extracts_default_topcolor_when_attributes_quoted() {

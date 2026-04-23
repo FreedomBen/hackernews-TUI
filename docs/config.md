@@ -130,6 +130,10 @@ ask_hn = { front = "red", effect = "bold" }
 tell_hn = { front = "yellow", effect = "bold" }
 show_hn = { front = "blue", effect = "bold" }
 launch_hn = { front = "green", effect = "bold" }
+
+# vote arrow styles (shown next to the focused item in the comment view)
+upvote = { front = "green" }
+downvote = { front = "red" }
 ```
 
 ### Palette

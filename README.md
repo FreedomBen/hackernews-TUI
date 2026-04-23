@@ -236,7 +236,8 @@ For more information about configuring the application's key mappings or definin
 | `prev_top_level_comment`       | Focus the previous top level comment                                            | `p`              |
 | `parent_comment`               | Focus the parent comment (if exists)                                            | `u`              |
 | `toggle_collapse_comment`      | Toggle collapsing the focused item                                              | `tab`            |
-| `vote`                         | Toggle voting the focused item (**requires [authentication](#authentication)**) | `v`              |
+| `upvote`                       | Toggle upvoting the focused item (**requires [authentication](#authentication)**) | `v`              |
+| `downvote`                     | Toggle downvoting the focused item (**requires downvote privilege**)            | `V`              |
 | `open_article_in_browser`      | Open in browser the discussed article                                           | `a`              |
 | `open_article_in_article_view` | Open in article view the discussed article                                      | `A`              |
 | `open_story_in_browser`        | Open in browser the discussed story                                             | `s`              |
