@@ -88,6 +88,7 @@ pub struct HnItem {
     pub level: usize,
     pub display_state: DisplayState,
     pub links: Vec<String>,
+    pub author: Option<String>,
     text: StyledString,
     minimized_text: StyledString,
 }
@@ -145,6 +146,7 @@ impl From<Story> for HnItem {
             level: 0, // story is at level 0 by default
             display_state: DisplayState::Normal,
             links: result.links,
+            author: Some(story.author.clone()),
             text,
             minimized_text,
         }
@@ -154,6 +156,7 @@ impl From<Story> for HnItem {
 impl From<Comment> for HnItem {
     fn from(comment: Comment) -> Self {
         let component_style = &config::get_config_theme().component_style;
+        let author = comment.author.clone();
 
         let metadata = utils::combine_styled_strings([
             StyledString::styled(comment.author, component_style.username),
@@ -183,6 +186,7 @@ impl From<Comment> for HnItem {
             level: comment.level,
             display_state: DisplayState::Normal,
             links: result.links,
+            author: Some(author),
             text,
             minimized_text,
         }

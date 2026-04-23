@@ -459,6 +459,10 @@ impl HasHelpView for comment_view::CommentView {
                             comment_view_keymap.reply.to_string(),
                             "Reply to the focused item in $EDITOR (requires authentication)",
                         ),
+                        Command::new(
+                            comment_view_keymap.edit.to_string(),
+                            "Edit the focused comment in $EDITOR (your own comments only, requires authentication)",
+                        ),
                     ],
                     default_other_commands(),
                 ]

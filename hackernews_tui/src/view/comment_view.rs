@@ -388,6 +388,28 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
                 siv.quit();
             }))
         })
+        // Edit the focused comment. Only fires if the focused item is
+        // authored by the logged-in user — otherwise the key falls through
+        // silently (HN would reject the edit anyway, but pre-gating avoids
+        // making the user type a full edit just to hit that rejection).
+        .on_pre_event_inner(comment_view_keymap.edit.clone(), |s, _| {
+            let id = s.get_focus_index();
+            let item = &s.items[id];
+            let me = client::get_user_info().map(|ui| ui.username.as_str())?;
+            let author = item.author.as_deref()?;
+            if author != me {
+                return None;
+            }
+            let comment_id = item.id;
+            let return_to_id = s.data.root_item.id;
+            Some(EventResult::with_cb(move |siv| {
+                siv.set_user_data(crate::reply_editor::PendingAction::EditComment {
+                    comment_id,
+                    return_to_id,
+                });
+                siv.quit();
+            }))
+        })
         // comment navigation shortcuts
         .on_pre_event_inner(comment_view_keymap.prev_comment, |s, _| {
             s.set_focus_index(

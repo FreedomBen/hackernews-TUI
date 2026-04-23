@@ -673,6 +673,61 @@ impl HNClient {
         Ok(())
     }
 
+    /// Fetch the prefilled edit form for a comment.
+    ///
+    /// HN only renders the edit form for comments the logged-in user owns
+    /// and only inside the edit window (~2 hours). Outside either gate the
+    /// page renders without a `hmac` input and this method errors — the UI
+    /// should pre-gate the common case (ownership) so users don't see that
+    /// failure path after typing a full edit.
+    pub fn fetch_edit_form(&self, comment_id: u32) -> Result<EditForm> {
+        let url = format!("{HN_HOST_URL}/edit?id={comment_id}");
+        let body = self
+            .client
+            .get(&url)
+            .call()
+            .with_context(|| format!("fetching {url}"))?
+            .into_string()?;
+        let hmac = extract_hidden_input(&body, "hmac").ok_or_else(|| {
+            let dump_path =
+                std::env::temp_dir().join(format!("hn-edit-response-{comment_id}.html"));
+            let hint = match std::fs::write(&dump_path, &body) {
+                Ok(()) => {
+                    format!(
+                        " (response body saved to {} for inspection)",
+                        dump_path.display()
+                    )
+                }
+                Err(_) => String::new(),
+            };
+            anyhow::anyhow!(
+                "no edit form on {url} — not your comment, edit window closed, \
+                 or HN changed its markup{hint}"
+            )
+        })?;
+        let text = extract_textarea(&body, "text")
+            .map(|raw| decode_html(&raw).to_string())
+            .unwrap_or_default();
+        Ok(EditForm { hmac, text })
+    }
+
+    /// Submit an edit for a comment the user owns.
+    ///
+    /// `hmac` must be the token scraped from the same `/edit?id=<comment_id>`
+    /// page the caller is operating against — HN ties the token to the id
+    /// and rejects cross-edits.
+    pub fn submit_comment_edit(&self, comment_id: u32, hmac: &str, new_text: &str) -> Result<()> {
+        let id_str = comment_id.to_string();
+        let url = format!("{HN_HOST_URL}/xedit");
+        let response_body = self
+            .client
+            .post(&url)
+            .send_form(&[("id", id_str.as_str()), ("hmac", hmac), ("text", new_text)])
+            .with_context(|| format!("POST {url}"))?
+            .into_string()?;
+        classify_post_reply_response(&response_body)
+    }
+
     /// Post a reply to a HN item.
     ///
     /// HN's reply flow is cookie-authenticated and CSRF-protected: we GET
@@ -809,6 +864,29 @@ fn listing_path_for_tag(tag: &str) -> Option<&'static str> {
         "show_hn" => Some("show"),
         _ => None,
     }
+}
+
+/// A snapshot of HN's edit form for a comment: the per-request `hmac`
+/// token plus the comment's current text, decoded from its HTML-escaped
+/// representation.
+pub struct EditForm {
+    pub hmac: String,
+    pub text: String,
+}
+
+/// Extract the inner content of `<textarea name="NAME">...</textarea>`.
+/// Uses `(?s)` so the `.` matches newlines — HN's textarea spans multiple
+/// lines when the comment does. Accommodates either attribute quote style.
+fn extract_textarea(body: &str, name: &str) -> Option<String> {
+    let pattern = format!(
+        r#"(?s)<textarea[^>]*name=['"]{}['"][^>]*>(.*?)</textarea>"#,
+        regex::escape(name)
+    );
+    regex::Regex::new(&pattern)
+        .ok()?
+        .captures(body)?
+        .get(1)
+        .map(|m| m.as_str().to_string())
 }
 
 /// Scrape the per-request `hmac` token out of HN's reply form. Returns

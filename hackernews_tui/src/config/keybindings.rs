@@ -219,6 +219,7 @@ pub struct CommentViewKeyMap {
     pub upvote: Keys,
     pub downvote: Keys,
     pub reply: Keys,
+    pub edit: Keys,
 
     pub toggle_collapse_comment: Keys,
 }
@@ -244,6 +245,7 @@ impl Default for CommentViewKeyMap {
             upvote: Keys::new(vec!['v'.into()]),
             downvote: Keys::new(vec!['V'.into()]),
             reply: Keys::new(vec!['r'.into()]),
+            edit: Keys::new(vec!['e'.into()]),
 
             toggle_collapse_comment: Keys::new(vec![event::Key::Tab.into()]),
         }

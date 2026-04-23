@@ -18,6 +18,10 @@ pub enum PendingAction {
         // of rooting on the individual comment they replied to.
         return_to_id: u32,
     },
+    EditComment {
+        comment_id: u32,
+        return_to_id: u32,
+    },
 }
 
 pub fn run_editor_for_reply(parent: &str) -> Result<Option<String>> {
@@ -85,6 +89,42 @@ fn write_scaffold(path: &Path, parent: &str) -> std::io::Result<()> {
     if !any {
         writeln!(f, "# > (empty)")?;
     }
+    Ok(())
+}
+
+pub fn run_editor_for_edit(current_text: &str) -> Result<Option<String>> {
+    let editor = std::env::var("VISUAL")
+        .ok()
+        .or_else(|| std::env::var("EDITOR").ok())
+        .unwrap_or_else(|| "vi".to_string());
+
+    let path = scratch_path();
+    write_edit_scaffold(&path, current_text)
+        .with_context(|| format!("writing scaffold to {}", path.display()))?;
+
+    let status =
+        run_editor(&editor, &path).with_context(|| format!("spawning editor `{editor}`"))?;
+    if !status.success() {
+        let _ = fs::remove_file(&path);
+        anyhow::bail!("editor `{editor}` exited with status {status}");
+    }
+
+    let body = read_and_strip(&path).with_context(|| format!("reading {}", path.display()))?;
+    let _ = fs::remove_file(&path);
+
+    if body.trim().is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(body))
+    }
+}
+
+fn write_edit_scaffold(path: &Path, current_text: &str) -> std::io::Result<()> {
+    let mut f = fs::File::create(path)?;
+    writeln!(f, "{current_text}")?;
+    writeln!(f, "{SCISSORS}")?;
+    writeln!(f, "# Edit your comment above the scissors line.")?;
+    writeln!(f, "# Save unchanged to cancel; clear the body to cancel.")?;
     Ok(())
 }
 

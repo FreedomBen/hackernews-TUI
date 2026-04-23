@@ -408,6 +408,39 @@ fn main() {
                 start_id = Some(return_to_id);
                 login_status = client::StartupLoginStatus::NotAttempted;
             }
+            Some(reply_editor::PendingAction::EditComment {
+                comment_id,
+                return_to_id,
+            }) => {
+                match client.fetch_edit_form(comment_id) {
+                    Ok(form) => match reply_editor::run_editor_for_edit(&form.text) {
+                        Ok(Some(new_text)) if new_text.trim() != form.text.trim() => {
+                            match client.submit_comment_edit(comment_id, &form.hmac, &new_text) {
+                                Ok(()) => {
+                                    eprintln!("✓ Edited comment {comment_id}.")
+                                }
+                                Err(err) => {
+                                    eprintln!("✗ Edit of comment {comment_id} failed: {err:#}")
+                                }
+                            }
+                            reply_editor::wait_for_enter();
+                        }
+                        Ok(Some(_)) | Ok(None) => {
+                            // Unchanged or cleared → treat as cancel.
+                        }
+                        Err(err) => {
+                            eprintln!("✗ Editor handoff failed: {err:#}");
+                            reply_editor::wait_for_enter();
+                        }
+                    },
+                    Err(err) => {
+                        eprintln!("✗ Failed to fetch edit form for {comment_id}: {err:#}");
+                        reply_editor::wait_for_enter();
+                    }
+                }
+                start_id = Some(return_to_id);
+                login_status = client::StartupLoginStatus::NotAttempted;
+            }
         }
     }
 }
