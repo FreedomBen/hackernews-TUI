@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use super::{article_view, comment_view, result_view::ResultView, story_view};
 use crate::client;
 use crate::prelude::*;
@@ -34,7 +36,25 @@ pub fn construct_story_view_async(
     let cb_sink = siv.cb_sink().clone();
     AsyncView::new_with_bg_creator(
         siv,
-        move || Ok(client.get_stories_by_tag(tag, sort_mode, page, numeric_filters)),
+        move || {
+            // Fetch stories and listing-page vote state in parallel so the
+            // arrows appear in the first render instead of waiting for a
+            // lazy vote-triggered fetch. Vote prefetch failures are
+            // swallowed: missing arrows is better than a blank error.
+            let (stories_result, vote_state) = rayon::join(
+                || client.get_stories_by_tag(tag, sort_mode, page, numeric_filters),
+                || match client.get_listing_vote_state(tag, page) {
+                    Ok(map) => map,
+                    Err(err) => {
+                        warn!(
+                            "failed to prefetch listing vote state (tag={tag}, page={page}): {err}"
+                        );
+                        HashMap::new()
+                    }
+                },
+            );
+            Ok(stories_result.map(|stories| (stories, vote_state)))
+        },
         move |result| {
             let cb_sink = cb_sink.clone();
             ResultView::new(
@@ -43,9 +63,9 @@ pub fn construct_story_view_async(
                         "failed to get stories (tag={tag}, sort_mode={sort_mode:?}, page={page}, numeric_filters={{{numeric_filters}}})",
                     )
                 }),
-                move |stories| {
+                move |(stories, vote_state)| {
                     let cb_sink = cb_sink.clone();
-                    story_view::construct_story_view(stories, client, tag, sort_mode, page, numeric_filters, cb_sink)
+                    story_view::construct_story_view(stories, vote_state, client, tag, sort_mode, page, numeric_filters, cb_sink)
                 },
             )
         },

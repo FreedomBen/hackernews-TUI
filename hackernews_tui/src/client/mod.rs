@@ -628,6 +628,32 @@ impl HNClient {
         Ok(map.remove(&item_id.to_string()))
     }
 
+    /// Fetch vote state for every item on an HN listing page in one request.
+    ///
+    /// Maps internal story tags to their `news.ycombinator.com` equivalents
+    /// (`front_page` → `/news`, `ask_hn` → `/ask`, `show_hn` → `/show`), so
+    /// opening the story list surfaces the user's existing up/down arrows
+    /// without waiting for the lazy per-item fetch. Tags that don't have a
+    /// stable HN listing URL (Algolia-sorted results, `story`/`job`, custom
+    /// keymaps, search) return an empty map; those views keep the existing
+    /// lazy behavior. Errors are non-fatal for the caller — we'd rather
+    /// render stories without vote arrows than fail the whole page load.
+    pub fn get_listing_vote_state(&self, tag: &str, page: usize) -> Result<HashMap<u32, VoteData>> {
+        let Some(path) = listing_path_for_tag(tag) else {
+            return Ok(HashMap::new());
+        };
+        let url = format!("{HN_HOST_URL}/{path}?p={}", page + 1);
+        let content = log!(
+            self.client.get(&url).call()?.into_string()?,
+            format!("fetch listing vote state (tag={tag}, page={page}) using {url}")
+        );
+        let map = parse_vote_data_from_content(&content)?;
+        Ok(map
+            .into_iter()
+            .filter_map(|(k, v)| k.parse::<u32>().ok().map(|id| (id, v)))
+            .collect())
+    }
+
     /// Apply (or rescind) a vote on a HN item.
     ///
     /// `new_vote = Some(dir)` sends `how=up|down` to HN. `new_vote = None`
@@ -715,6 +741,19 @@ fn classify_login_response(body: &str) -> Result<()> {
     Err(anyhow::anyhow!(
         "login failed: unexpected response from Hacker News"
     ))
+}
+
+/// Map an internal story-view tag to the HN listing path that shows the same
+/// set of items with vote links attached. Only the tags backed by an HN-side
+/// page are mapped; Algolia-based views (search, `story`/`job` listings,
+/// custom keymaps) return `None` and fall back to per-item lazy fetches.
+fn listing_path_for_tag(tag: &str) -> Option<&'static str> {
+    match tag {
+        "front_page" => Some("news"),
+        "ask_hn" => Some("ask"),
+        "show_hn" => Some("show"),
+        _ => None,
+    }
 }
 
 /// Parse vote data out of a rendered HN item page.
@@ -879,10 +918,28 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<Option<Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_login_response, parse_karma_from_profile, parse_topcolor_from_profile,
-        parse_vote_data_from_content, StartupLoginStatus,
+        classify_login_response, listing_path_for_tag, parse_karma_from_profile,
+        parse_topcolor_from_profile, parse_vote_data_from_content, StartupLoginStatus,
     };
     use crate::model::VoteDirection;
+
+    #[test]
+    fn listing_path_maps_hn_backed_tags() {
+        assert_eq!(listing_path_for_tag("front_page"), Some("news"));
+        assert_eq!(listing_path_for_tag("ask_hn"), Some("ask"));
+        assert_eq!(listing_path_for_tag("show_hn"), Some("show"));
+    }
+
+    #[test]
+    fn listing_path_returns_none_for_algolia_only_tags() {
+        // These views come from Algolia search with arbitrary sort/filter, so
+        // there's no single HN page that renders the same items. Callers fall
+        // back to the lazy per-item vote fetch.
+        assert_eq!(listing_path_for_tag("story"), None);
+        assert_eq!(listing_path_for_tag("job"), None);
+        assert_eq!(listing_path_for_tag("custom_whatever"), None);
+        assert_eq!(listing_path_for_tag(""), None);
+    }
 
     #[test]
     fn classify_login_accepts_logged_in_page_with_logout_link() {

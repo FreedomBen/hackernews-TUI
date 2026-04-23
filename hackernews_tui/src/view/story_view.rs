@@ -22,10 +22,11 @@ pub struct StoryView {
     starting_id: usize,
     max_id_len: usize,
 
-    // Vote state is populated lazily as the user votes on individual
-    // stories — the story-list endpoints don't return vote data, so we
-    // pay one HTML fetch per story on first vote to recover the auth
-    // token. Completed votes land on `vote_receiver` from a background
+    // Vote state for stories visible on the HN listing page is fetched
+    // eagerly at construction time so the arrows are visible as soon as
+    // the list renders. Stories not on that page (later pagination, tags
+    // with no HN equivalent) fall back to a lazy per-item fetch on first
+    // vote. Completed votes land on `vote_receiver` from a background
     // thread; `wrap_layout` drains it into `vote_state` and repaints the
     // relevant row.
     vote_state: HashMap<u32, VoteData>,
@@ -44,9 +45,15 @@ impl ViewWrapper for StoryView {
 }
 
 impl StoryView {
-    pub fn new(stories: Vec<Story>, starting_id: usize, cb_sink: CbSink) -> Self {
+    pub fn new(
+        stories: Vec<Story>,
+        starting_id: usize,
+        cb_sink: CbSink,
+        initial_vote_state: HashMap<u32, VoteData>,
+    ) -> Self {
         let max_id_len = Self::compute_max_id_len(stories.len(), starting_id);
-        let view = Self::construct_story_list(&stories, starting_id, max_id_len);
+        let view =
+            Self::construct_story_list(&stories, starting_id, max_id_len, &initial_vote_state);
         let (vote_sender, vote_receiver) = mpsc::channel();
         StoryView {
             view,
@@ -54,7 +61,7 @@ impl StoryView {
             raw_command: String::new(),
             starting_id,
             max_id_len,
-            vote_state: HashMap::new(),
+            vote_state: initial_vote_state,
             vote_sender,
             vote_receiver,
             cb_sink,
@@ -78,6 +85,7 @@ impl StoryView {
         stories: &[Story],
         starting_id: usize,
         max_id_len: usize,
+        vote_state: &HashMap<u32, VoteData>,
     ) -> ScrollView<LinearLayout> {
         LinearLayout::vertical()
             .with(|s| {
@@ -87,7 +95,11 @@ impl StoryView {
                         format!("{1:>0$}. ", max_id_len, starting_id + i + 1),
                         config::get_config_theme().component_style.metadata,
                     );
-                    story_text.append(Self::get_story_text(max_id_len, story, None));
+                    story_text.append(Self::get_story_text(
+                        max_id_len,
+                        story,
+                        vote_state.get(&story.id),
+                    ));
 
                     s.add_child(text_view::TextView::new(story_text));
                 })
@@ -312,6 +324,7 @@ pub fn construct_story_main_view(
     client: &'static client::HNClient,
     starting_id: usize,
     cb_sink: CbSink,
+    initial_vote_state: HashMap<u32, VoteData>,
 ) -> OnEventView<StoryView> {
     let is_suffix_key =
         |c: &Event| -> bool { config::get_story_view_keymap().goto_story.has_event(c) };
@@ -319,102 +332,107 @@ pub fn construct_story_main_view(
     let story_view_keymap = config::get_story_view_keymap().clone();
     let scroll_keymap = config::get_scroll_keymap().clone();
 
-    OnEventView::new(StoryView::new(stories, starting_id, cb_sink))
-        // number parsing
-        .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
-            match *e {
-                Event::Char(c) if c.is_ascii_digit() => {
-                    s.raw_command.push(c);
-                }
-                _ => {
-                    if !is_suffix_key(e) {
-                        s.raw_command.clear();
-                    }
-                }
-            };
-
-            // don't allow the inner `LinearLayout` child view to handle the event
-            // because of its pre-defined `on_event` function
-            Some(EventResult::Ignored)
-        })
-        // story navigation shortcuts
-        .on_pre_event_inner(story_view_keymap.prev_story, |s, _| {
-            let id = s.get_focus_index();
-            if id == 0 {
-                None
-            } else {
-                s.set_focus_index(id - 1)
+    OnEventView::new(StoryView::new(
+        stories,
+        starting_id,
+        cb_sink,
+        initial_vote_state,
+    ))
+    // number parsing
+    .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
+        match *e {
+            Event::Char(c) if c.is_ascii_digit() => {
+                s.raw_command.push(c);
             }
-        })
-        .on_pre_event_inner(story_view_keymap.next_story, |s, _| {
-            let id = s.get_focus_index();
-            s.set_focus_index(id + 1)
-        })
-        .on_pre_event_inner(story_view_keymap.goto_story_comment_view, move |s, _| {
-            let id = s.get_focus_index();
-            // the story struct hasn't had any comments inside yet,
-            // so it can be cloned without greatly affecting performance
-            let item_id = s.stories[id].id;
-            Some(EventResult::with_cb({
-                move |s| comment_view::construct_and_add_new_comment_view(s, client, item_id, false)
-            }))
-        })
-        // vote shortcuts
-        .on_pre_event_inner(story_view_keymap.upvote, move |s, _| {
-            s.apply_vote(VoteDirection::Up, client);
-            Some(EventResult::Consumed(None))
-        })
-        .on_pre_event_inner(story_view_keymap.downvote, move |s, _| {
-            s.apply_vote(VoteDirection::Down, client);
-            Some(EventResult::Consumed(None))
-        })
-        // open external link shortcuts
-        .on_pre_event_inner(story_view_keymap.open_article_in_browser, move |s, _| {
-            let id = s.get_focus_index();
-            utils::open_url_in_browser(s.stories[id].get_url().as_ref());
-            Some(EventResult::Consumed(None))
-        })
-        .on_pre_event_inner(
-            story_view_keymap.open_article_in_article_view,
-            move |s, _| {
-                let id = s.get_focus_index();
-                let url = s.stories[id].url.clone();
-                if !url.is_empty() {
-                    Some(EventResult::with_cb({
-                        move |s| article_view::construct_and_add_new_article_view(client, s, &url)
-                    }))
-                } else {
-                    Some(EventResult::Consumed(None))
-                }
-            },
-        )
-        .on_pre_event_inner(story_view_keymap.open_story_in_browser, move |s, _| {
-            let url = s.stories[s.get_focus_index()].story_url();
-            utils::open_url_in_browser(&url);
-            Some(EventResult::Consumed(None))
-        })
-        .on_pre_event_inner(story_view_keymap.goto_story, move |s, _| {
-            match s.raw_command.parse::<usize>() {
-                Ok(number) => {
+            _ => {
+                if !is_suffix_key(e) {
                     s.raw_command.clear();
-                    if number < starting_id + 1 {
-                        return None;
-                    }
-                    let number = number - 1 - starting_id;
-                    if number < s.len() {
-                        s.set_focus_index(number).unwrap();
-                        Some(EventResult::Consumed(None))
-                    } else {
-                        None
-                    }
                 }
-                Err(_) => None,
             }
-        })
-        // vim-style half-page cursor movement
-        .on_pre_event_inner(scroll_keymap.page_down, |s, _| s.move_focus_half_page(true))
-        .on_pre_event_inner(scroll_keymap.page_up, |s, _| s.move_focus_half_page(false))
-        .on_scroll_events()
+        };
+
+        // don't allow the inner `LinearLayout` child view to handle the event
+        // because of its pre-defined `on_event` function
+        Some(EventResult::Ignored)
+    })
+    // story navigation shortcuts
+    .on_pre_event_inner(story_view_keymap.prev_story, |s, _| {
+        let id = s.get_focus_index();
+        if id == 0 {
+            None
+        } else {
+            s.set_focus_index(id - 1)
+        }
+    })
+    .on_pre_event_inner(story_view_keymap.next_story, |s, _| {
+        let id = s.get_focus_index();
+        s.set_focus_index(id + 1)
+    })
+    .on_pre_event_inner(story_view_keymap.goto_story_comment_view, move |s, _| {
+        let id = s.get_focus_index();
+        // the story struct hasn't had any comments inside yet,
+        // so it can be cloned without greatly affecting performance
+        let item_id = s.stories[id].id;
+        Some(EventResult::with_cb({
+            move |s| comment_view::construct_and_add_new_comment_view(s, client, item_id, false)
+        }))
+    })
+    // vote shortcuts
+    .on_pre_event_inner(story_view_keymap.upvote, move |s, _| {
+        s.apply_vote(VoteDirection::Up, client);
+        Some(EventResult::Consumed(None))
+    })
+    .on_pre_event_inner(story_view_keymap.downvote, move |s, _| {
+        s.apply_vote(VoteDirection::Down, client);
+        Some(EventResult::Consumed(None))
+    })
+    // open external link shortcuts
+    .on_pre_event_inner(story_view_keymap.open_article_in_browser, move |s, _| {
+        let id = s.get_focus_index();
+        utils::open_url_in_browser(s.stories[id].get_url().as_ref());
+        Some(EventResult::Consumed(None))
+    })
+    .on_pre_event_inner(
+        story_view_keymap.open_article_in_article_view,
+        move |s, _| {
+            let id = s.get_focus_index();
+            let url = s.stories[id].url.clone();
+            if !url.is_empty() {
+                Some(EventResult::with_cb({
+                    move |s| article_view::construct_and_add_new_article_view(client, s, &url)
+                }))
+            } else {
+                Some(EventResult::Consumed(None))
+            }
+        },
+    )
+    .on_pre_event_inner(story_view_keymap.open_story_in_browser, move |s, _| {
+        let url = s.stories[s.get_focus_index()].story_url();
+        utils::open_url_in_browser(&url);
+        Some(EventResult::Consumed(None))
+    })
+    .on_pre_event_inner(story_view_keymap.goto_story, move |s, _| {
+        match s.raw_command.parse::<usize>() {
+            Ok(number) => {
+                s.raw_command.clear();
+                if number < starting_id + 1 {
+                    return None;
+                }
+                let number = number - 1 - starting_id;
+                if number < s.len() {
+                    s.set_focus_index(number).unwrap();
+                    Some(EventResult::Consumed(None))
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        }
+    })
+    // vim-style half-page cursor movement
+    .on_pre_event_inner(scroll_keymap.page_down, |s, _| s.move_focus_half_page(true))
+    .on_pre_event_inner(scroll_keymap.page_up, |s, _| s.move_focus_half_page(false))
+    .on_scroll_events()
 }
 
 fn get_story_view_title_bar(tag: &'static str, sort_mode: client::StorySortMode) -> impl View {
@@ -464,8 +482,10 @@ fn get_story_view_title_bar(tag: &'static str, sort_mode: client::StorySortMode)
 }
 
 /// Construct a story view given a list of stories.
+#[allow(clippy::too_many_arguments)]
 pub fn construct_story_view(
     stories: Vec<Story>,
+    initial_vote_state: HashMap<u32, VoteData>,
     client: &'static client::HNClient,
     tag: &'static str,
     sort_mode: client::StorySortMode,
@@ -474,7 +494,9 @@ pub fn construct_story_view(
     cb_sink: CbSink,
 ) -> impl View {
     let starting_id = client::STORY_LIMIT * page;
-    let main_view = construct_story_main_view(stories, client, starting_id, cb_sink).full_height();
+    let main_view =
+        construct_story_main_view(stories, client, starting_id, cb_sink, initial_vote_state)
+            .full_height();
 
     let mut view = LinearLayout::vertical()
         .child(get_story_view_title_bar(tag, sort_mode))
