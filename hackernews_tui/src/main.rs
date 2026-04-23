@@ -4,6 +4,7 @@ pub mod config;
 pub mod model;
 pub mod parser;
 pub mod prelude;
+pub mod reply_editor;
 pub mod utils;
 pub mod view;
 
@@ -19,7 +20,7 @@ fn run(
     start_id: Option<u32>,
     auth_file: std::path::PathBuf,
     login_status: client::StartupLoginStatus,
-) {
+) -> Option<reply_editor::PendingAction> {
     // setup the application's UI
     let s = view::init_ui(client, start_id, auth_file, login_status);
 
@@ -32,6 +33,10 @@ fn run(
     let mut app = CursiveRunner::new(s, buffered_backend);
 
     app.run();
+    // Dropping `app` at the end of this function restores the terminal
+    // (disables raw mode, leaves the alt screen, shows the cursor) so
+    // the caller can hand it over to `$EDITOR` cleanly.
+    app.take_user_data::<reply_editor::PendingAction>()
 }
 
 /// initialize application logging
@@ -372,6 +377,37 @@ fn main() {
     client::init_user_info(user_info);
     let client = client::install_client(hn_client);
 
-    let start_id = args.get_one::<u32>("start_id").cloned();
-    run(client, start_id, auth_path, login_status);
+    let mut start_id = args.get_one::<u32>("start_id").cloned();
+    let mut login_status = login_status;
+    loop {
+        match run(client, start_id, auth_path.clone(), login_status) {
+            None => break,
+            Some(reply_editor::PendingAction::ReplyTo {
+                parent_id,
+                parent_content,
+                return_to_id,
+            }) => {
+                match reply_editor::run_editor_for_reply(&parent_content) {
+                    Ok(Some(body)) => {
+                        match client.post_reply(parent_id, &body) {
+                            Ok(()) => eprintln!("✓ Reply posted to item {parent_id}."),
+                            Err(err) => {
+                                eprintln!("✗ Reply to item {parent_id} failed: {err:#}")
+                            }
+                        }
+                        reply_editor::wait_for_enter();
+                    }
+                    Ok(None) => {
+                        // Empty body → user aborted; re-enter the TUI silently.
+                    }
+                    Err(err) => {
+                        eprintln!("✗ Editor handoff failed: {err:#}");
+                        reply_editor::wait_for_enter();
+                    }
+                }
+                start_id = Some(return_to_id);
+                login_status = client::StartupLoginStatus::NotAttempted;
+            }
+        }
+    }
 }

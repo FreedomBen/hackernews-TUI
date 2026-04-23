@@ -371,6 +371,23 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
             s.apply_vote(VoteDirection::Down, client);
             Some(EventResult::Consumed(None))
         })
+        // Reply to the focused item. Stashes the request into Cursive
+        // user data and quits; `main::run`'s outer loop reads it, spawns
+        // `$EDITOR`, then re-enters the TUI.
+        .on_pre_event_inner(Event::Char('r'), |s, _| {
+            let id = s.get_focus_index();
+            let parent_id = s.items[id].id;
+            let parent_content = s.items[id].plain_text();
+            let return_to_id = s.data.root_item.id;
+            Some(EventResult::with_cb(move |siv| {
+                siv.set_user_data(crate::reply_editor::PendingAction::ReplyTo {
+                    parent_id,
+                    parent_content: parent_content.clone(),
+                    return_to_id,
+                });
+                siv.quit();
+            }))
+        })
         // comment navigation shortcuts
         .on_pre_event_inner(comment_view_keymap.prev_comment, |s, _| {
             s.set_focus_index(

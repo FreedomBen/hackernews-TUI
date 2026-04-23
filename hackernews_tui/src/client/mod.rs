@@ -673,6 +673,61 @@ impl HNClient {
         Ok(())
     }
 
+    /// Post a reply to a HN item.
+    ///
+    /// HN's reply flow is cookie-authenticated and CSRF-protected: we GET
+    /// `/reply?id=<parent>` to scrape the per-request `hmac` token (plus the
+    /// `goto` redirect target), then POST the body to `/comment` along with
+    /// the session cookies carried by [`self.client`]. If the user isn't
+    /// logged in, HN redirects the GET to its login page and the form lookup
+    /// fails — we surface that as an explicit error instead of a silent noop.
+    pub fn post_reply(&self, parent_id: u32, text: &str) -> Result<()> {
+        let page_url = format!("{HN_HOST_URL}/reply?id={parent_id}");
+        let page_body = self
+            .client
+            .get(&page_url)
+            .call()
+            .with_context(|| format!("fetching {page_url}"))?
+            .into_string()?;
+        let hmac = parse_reply_form(&page_body).ok_or_else(|| {
+            let dump_path =
+                std::env::temp_dir().join(format!("hn-reply-response-{parent_id}.html"));
+            let hint = match std::fs::write(&dump_path, &page_body) {
+                Ok(()) => {
+                    format!(
+                        " (response body saved to {} for inspection)",
+                        dump_path.display()
+                    )
+                }
+                Err(_) => String::new(),
+            };
+            let looks_like_login =
+                page_body.contains(r#"name="acct""#) || page_body.contains(r#"name='acct'"#);
+            let cause = if looks_like_login {
+                "HN redirected the GET to its login page — the cached session is probably stale. \
+                 Try deleting the `session` line in hn-auth.toml and restarting, or re-paste a \
+                 fresh cookie"
+            } else {
+                "hmac field missing, or HN changed its markup"
+            };
+            anyhow::anyhow!("no reply form on {page_url} — {cause}{hint}")
+        })?;
+        let parent = parent_id.to_string();
+        let comment_url = format!("{HN_HOST_URL}/comment");
+        let response_body = self
+            .client
+            .post(&comment_url)
+            .send_form(&[
+                ("parent", parent.as_str()),
+                ("goto", ""),
+                ("hmac", hmac.as_str()),
+                ("text", text),
+            ])
+            .with_context(|| format!("POST {comment_url}"))?
+            .into_string()?;
+        classify_post_reply_response(&response_body)
+    }
+
     /// Fetch the logged-in user's profile page and return the parsed
     /// `topcolor` and `karma` together.
     ///
@@ -754,6 +809,52 @@ fn listing_path_for_tag(tag: &str) -> Option<&'static str> {
         "show_hn" => Some("show"),
         _ => None,
     }
+}
+
+/// Scrape the per-request `hmac` token out of HN's reply form. Returns
+/// `None` if the input is missing — typically because the user isn't
+/// logged in (HN serves the login page instead). The `goto` input on the
+/// reply form is always rendered empty (`<input name="goto">` with no
+/// `value=`), so we don't bother parsing it; the POST just sends `goto=""`
+/// which is what a browser does too.
+fn parse_reply_form(body: &str) -> Option<String> {
+    extract_hidden_input(body, "hmac")
+}
+
+/// Extract the `value="..."` of an `<input name="NAME" ...>` element. HN
+/// uses both single- and double-quoted attribute values on different pages
+/// so the regex accepts either.
+fn extract_hidden_input(body: &str, name: &str) -> Option<String> {
+    let pattern = format!(
+        r#"name=['"]{}['"][^>]*value=['"]([^'"]+)['"]"#,
+        regex::escape(name)
+    );
+    regex::Regex::new(&pattern)
+        .ok()?
+        .captures(body)?
+        .get(1)
+        .map(|m| m.as_str().to_string())
+}
+
+/// Classify an HN `/comment` response body after a reply POST.
+///
+/// HN renders errors as HTML pages with distinctive phrases; treat any of
+/// them as failure. A missing error marker is treated as success — HN
+/// redirects to the item page on a successful post and `ureq` follows the
+/// redirect so we see that page's body.
+fn classify_post_reply_response(body: &str) -> Result<()> {
+    if body.contains("Unknown or expired link") {
+        return Err(anyhow::anyhow!("reply link expired — try again"));
+    }
+    if body.contains("Validation required") {
+        return Err(anyhow::anyhow!(
+            "HN requires a CAPTCHA — log in via the web UI first, then retry"
+        ));
+    }
+    if body.contains("You broke the rate limit") {
+        return Err(anyhow::anyhow!("HN rate-limited the reply"));
+    }
+    Ok(())
 }
 
 /// Parse vote data out of a rendered HN item page.

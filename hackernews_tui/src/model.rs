@@ -264,6 +264,12 @@ impl Story {
 }
 
 impl HnItem {
+    /// Plain-text source of the item's rendered body, stripped of styling.
+    /// Used when quoting the item into `$EDITOR` for replies.
+    pub fn plain_text(&self) -> String {
+        self.text.source().to_string()
+    }
+
     /// gets the dispay text of the item, which depends on the item's states
     /// (e.g `vote`, `display_state`, etc)
     pub fn text(&self, vote: Option<&VoteData>) -> StyledString {
