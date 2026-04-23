@@ -456,12 +456,7 @@ impl HNClient {
             .send_form(&[("acct", username), ("pw", password)])?
             .into_string()?;
 
-        // determine that a login is successful by finding the logout button
-        if res.contains("href=\"logout") {
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Bad login"))
-        }
+        classify_login_response(&res)
     }
 
     /// gets the HTML page content of a Hacker News item
@@ -562,6 +557,42 @@ impl HNClient {
         );
         parse_topcolor_from_profile(&body)
     }
+}
+
+/// Classify an HN `/login` response body as success or failure.
+///
+/// HN's `/login` POST behaves as follows:
+///
+/// - **Success** — 302 to `goto` (defaults to `/news`). `ureq` follows the
+///   redirect, so the body we see is the logged-in HN page, which carries a
+///   `<a href="logout?...">` link in its nav bar.
+/// - **Bad credentials** — 200 with a body starting `Bad login.` that
+///   re-renders the login form. No `logout` substring appears anywhere.
+/// - **Captcha required** — 200 with a body starting `Validation required.`
+///   that embeds a Google reCAPTCHA. HN serves this after repeated failed
+///   attempts from the same IP; we can't solve it from a TUI, so surface
+///   a specific error telling the user to log in via the web UI first.
+///
+/// Previously we only checked for the success marker (`href="logout`) and
+/// treated its absence as failure — which was fine in theory, but fragile
+/// enough that a wrong-password attempt once got through and was written to
+/// the auth file. Check for explicit failure markers first so any unexpected
+/// body also fails closed.
+fn classify_login_response(body: &str) -> Result<()> {
+    if body.contains("Bad login") {
+        return Err(anyhow::anyhow!("Bad login"));
+    }
+    if body.contains("Validation required") {
+        return Err(anyhow::anyhow!(
+            "Hacker News requires a captcha — sign in once via news.ycombinator.com, then retry"
+        ));
+    }
+    if body.contains("href=\"logout") {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "login failed: unexpected response from Hacker News"
+    ))
 }
 
 /// Parse vote data out of a rendered HN item page.
@@ -693,8 +724,47 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_topcolor_from_profile, parse_vote_data_from_content};
+    use super::{
+        classify_login_response, parse_topcolor_from_profile, parse_vote_data_from_content,
+    };
     use crate::model::VoteDirection;
+
+    #[test]
+    fn classify_login_accepts_logged_in_page_with_logout_link() {
+        // HN's logged-in nav bar includes a double-quoted logout anchor.
+        let body = r#"<html><body><span><a href="logout?auth=abc&amp;goto=news">logout</a></span></body></html>"#;
+        assert!(classify_login_response(body).is_ok());
+    }
+
+    #[test]
+    fn classify_login_rejects_bad_login_body() {
+        // Verbatim shape of HN's response for wrong password (non-existent user).
+        let body = r#"<html lang="en"><body>Bad login.<br><br><b>Login</b><br><br><form action="login" method="post"></form></body></html>"#;
+        let err = classify_login_response(body).unwrap_err().to_string();
+        assert!(err.contains("Bad login"), "got: {err}");
+    }
+
+    #[test]
+    fn classify_login_rejects_captcha_challenge() {
+        // HN serves this after repeated failed attempts; no "logout" anywhere.
+        let body = r#"<html lang="en"><body>Validation required. If this doesn't work, you can email hn@ycombinator.com<br><div class="g-recaptcha"></div></body></html>"#;
+        let err = classify_login_response(body).unwrap_err().to_string();
+        assert!(err.contains("captcha"), "got: {err}");
+    }
+
+    #[test]
+    fn classify_login_rejects_empty_body() {
+        assert!(classify_login_response("").is_err());
+    }
+
+    #[test]
+    fn classify_login_rejects_unexpected_body() {
+        // Anything without the success marker and without a known failure
+        // marker must still fail — we don't want to accidentally persist
+        // credentials on some unrecognised HN response.
+        let body = "<html><body>welcome</body></html>";
+        assert!(classify_login_response(body).is_err());
+    }
 
     #[test]
     fn parses_unvoted_item_with_downvote_privilege() {
