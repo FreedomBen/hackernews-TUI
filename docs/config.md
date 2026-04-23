@@ -4,9 +4,9 @@ User can change the application's configurations by modifying the user's config 
 
 **Note**: user doesn't need to specify all the options in the config file as a **default** value will be used for non-specified options.
 
-An example config file (with some default config values) can be found in [example `hn-tui.toml`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml).
+Two example config files (with some default config values) ship with the project: [`hn-tui.toml`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) for the light palette and [`hn-tui-dark.toml`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml) for the dark palette. Both are embedded in the binary, so you don't need to download them separately.
 
-To generate a config file, run `hackernews_tui --init-config light` (or `--init-config dark` for the dark palette). It writes the chosen default to the `--config` path (or its resolved default) and exits. If the config file is missing when the application launches interactively, it will also prompt whether to create one.
+To generate a config file, run `hackernews_tui --init-config light` (or `--init-config dark` for the dark palette). It writes the chosen default to the `--config` path (or its resolved default under the user's config directory) and exits. If the config file is missing when the application launches interactively, the first-run prompt will also offer to create one; answering `s` (skip) leaves the filesystem untouched and uses built-in defaults. The prompt only fires when both stdin and stdout are TTYs, so non-interactive runs always fall through to the built-in defaults.
 
 ## Table of Contents
 

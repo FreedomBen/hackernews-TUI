@@ -266,12 +266,12 @@ By default, `hackernews-tui` will look for the `hn-tui.toml` user-defined config
 - the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html)
 - `.config` directory inside the [user's home directory](https://docs.rs/dirs-next/latest/dirs_next/fn.home_dir.html)
 
-If no such file is found and the application is launched from an interactive terminal, it will prompt to write a default config (light or dark). You can skip the prompt and the application will fall back to a set of [default configurations](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml).
+If no such file is found and the application is launched from an interactive terminal, it will prompt to write a default config — [`light`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) or [`dark`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml). Skip the prompt (press `s` / Enter) and the application falls back to the built-in defaults without writing anything.
 
-To bypass the prompt, use `--init-config` to write a default config and exit:
+To bypass the prompt, use `--init-config <light|dark>` to write a default config to the resolved `--config` path and exit. Non-interactive runs (pipes, CI) with no config file also skip the prompt and use the built-in defaults.
 
 ```shell
-# write a default light-theme config to the default --config path
+# write the default light-theme config to the default --config path
 hackernews_tui --init-config light
 
 # or pick a specific path and the dark variant
@@ -284,7 +284,7 @@ User can also specify the path to config file when running the application with 
 hackernews_tui -c ~/.config/hn-tui.toml
 ```
 
-For further information about the application's configurations, please refer to the [example config file](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) and the [config documentation](https://github.com/aome510/hackernews-TUI/blob/main/docs/config.md).
+For further information about the application's configurations, please refer to the example config files ([light](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml), [dark](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml)) and the [config documentation](https://github.com/aome510/hackernews-TUI/blob/main/docs/config.md).
 
 ## Authentication
 
