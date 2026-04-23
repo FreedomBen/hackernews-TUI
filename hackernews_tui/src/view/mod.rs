@@ -1,6 +1,7 @@
 mod async_view;
 mod fn_view_wrapper;
 mod link_dialog;
+mod login_dialog;
 mod result_view;
 mod text_view;
 mod traits;
@@ -40,7 +41,11 @@ fn set_up_switch_story_view_shortcut(
     });
 }
 
-fn set_up_global_callbacks(s: &mut Cursive, client: &'static client::HNClient) {
+fn set_up_global_callbacks(
+    s: &mut Cursive,
+    client: &'static client::HNClient,
+    auth_file: std::path::PathBuf,
+) {
     s.clear_global_callbacks(Event::CtrlChar('c'));
 
     let global_keymap = config::get_global_keymap().clone();
@@ -108,6 +113,10 @@ fn set_up_global_callbacks(s: &mut Cursive, client: &'static client::HNClient) {
         s.add_layer(help_view::DefaultHelpView::construct_on_event_help_view())
     });
 
+    s.set_on_post_event(global_keymap.open_login_dialog, move |s| {
+        s.add_layer(login_dialog::get_login_dialog(client, auth_file.clone()));
+    });
+
     s.set_on_post_event(global_keymap.quit, |s| s.quit());
 }
 
@@ -115,6 +124,7 @@ fn set_up_global_callbacks(s: &mut Cursive, client: &'static client::HNClient) {
 pub fn init_ui(
     client: &'static client::HNClient,
     start_id: Option<u32>,
+    auth_file: std::path::PathBuf,
 ) -> cursive::CursiveRunnable {
     let mut s = cursive::default();
 
@@ -137,7 +147,7 @@ pub fn init_ui(
         t.palette[PaletteStyle::HighlightInactive] = ColorStyle::highlight_inactive().into();
     });
 
-    set_up_global_callbacks(&mut s, client);
+    set_up_global_callbacks(&mut s, client, auth_file);
 
     match start_id {
         Some(id) => {

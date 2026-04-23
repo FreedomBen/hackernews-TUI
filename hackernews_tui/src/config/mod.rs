@@ -9,7 +9,7 @@ pub use keybindings::*;
 pub use theme::*;
 
 use config_parser2::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, ConfigParse)]
 /// Config is a struct storing the application's configurations
@@ -24,7 +24,7 @@ pub struct Config {
     pub keymap: keybindings::KeyMap,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 /// HackerNews user's authentication data
 pub struct Auth {
     pub username: String,
@@ -85,6 +85,29 @@ impl Auth {
         let auth_str = std::fs::read_to_string(file)?;
         Ok(toml::from_str::<Self>(&auth_str)?)
     }
+
+    /// Serialize auth to TOML and write it to `file`, creating any missing
+    /// parent directories. On Unix the file is chmod'd to `0600` so other
+    /// local users can't read the credentials.
+    pub fn write_to_file<P>(&self, file: P) -> anyhow::Result<()>
+    where
+        P: AsRef<std::path::Path>,
+    {
+        let path = file.as_ref();
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let toml_str = toml::to_string_pretty(self)?;
+        std::fs::write(path, toml_str)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -131,4 +154,77 @@ fn init_config(config: Config) {
 
 pub fn get_config() -> &'static Config {
     CONFIG.get().unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Auth;
+
+    fn tmp_path(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "hackernews_tui_auth_test_{}_{suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn auth_write_then_read_round_trips() {
+        let path = tmp_path("round_trip");
+        let _ = std::fs::remove_file(&path);
+
+        let original = Auth {
+            username: "alice".to_string(),
+            password: "hunter2".to_string(),
+        };
+        original.write_to_file(&path).expect("write should succeed");
+
+        let parsed = Auth::from_file(&path).expect("read should succeed");
+        assert_eq!(parsed.username, original.username);
+        assert_eq!(parsed.password, original.password);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn auth_write_creates_parent_dirs() {
+        let dir = tmp_path("parent_dirs");
+        let path = dir.join("nested").join("hn-auth.toml");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        Auth {
+            username: "bob".to_string(),
+            password: "pw".to_string(),
+        }
+        .write_to_file(&path)
+        .expect("write should succeed");
+        assert!(path.exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auth_write_sets_0600_on_unix() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = tmp_path("perms");
+        let _ = std::fs::remove_file(&path);
+
+        Auth {
+            username: "carol".to_string(),
+            password: "pw".to_string(),
+        }
+        .write_to_file(&path)
+        .expect("write should succeed");
+
+        let mode = std::fs::metadata(&path)
+            .expect("stat should succeed")
+            .permissions()
+            .mode();
+        // Only compare the low 9 bits (rwx for u/g/o); the file-type bits above
+        // are platform-defined and not what we're asserting on.
+        assert_eq!(mode & 0o777, 0o600, "expected 0600, got {:o}", mode & 0o777);
+
+        std::fs::remove_file(&path).ok();
+    }
 }

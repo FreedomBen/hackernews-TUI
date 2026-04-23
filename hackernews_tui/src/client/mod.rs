@@ -554,3 +554,11 @@ pub fn init_client() -> &'static HNClient {
     });
     CLIENT.get().unwrap()
 }
+
+/// Verify a username/password pair against Hacker News without touching the
+/// global client. Used by the first-run prompt so credentials can be checked
+/// before they're written to disk.
+pub fn verify_credentials(username: &str, password: &str) -> Result<()> {
+    let client = HNClient::new()?;
+    client.login(username, password)
+}

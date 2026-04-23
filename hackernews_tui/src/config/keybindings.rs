@@ -83,6 +83,7 @@ impl Default for ScrollKeyMap {
 #[derive(Debug, Clone, Deserialize, ConfigParse)]
 pub struct GlobalKeyMap {
     pub open_help_dialog: Keys,
+    pub open_login_dialog: Keys,
     pub quit: Keys,
     pub close_dialog: Keys,
 
@@ -100,6 +101,7 @@ impl Default for GlobalKeyMap {
     fn default() -> Self {
         GlobalKeyMap {
             open_help_dialog: Keys::new(vec!['?'.into()]),
+            open_login_dialog: Keys::new(vec!['L'.into()]),
             quit: Keys::new(vec!['q'.into(), event::Event::CtrlChar('c')]),
             close_dialog: Keys::new(vec![event::Key::Esc.into()]),
 

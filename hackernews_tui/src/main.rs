@@ -14,7 +14,7 @@ const DEFAULT_LOG_FILE: &str = "hn-tui.log";
 use clap::*;
 use prelude::*;
 
-fn run(auth: Option<config::Auth>, start_id: Option<u32>) {
+fn run(auth: Option<config::Auth>, start_id: Option<u32>, auth_file: std::path::PathBuf) {
     // setup HN Client
     let client = client::init_client();
 
@@ -26,7 +26,7 @@ fn run(auth: Option<config::Auth>, start_id: Option<u32>) {
     }
 
     // setup the application's UI
-    let s = view::init_ui(client, start_id);
+    let s = view::init_ui(client, start_id, auth_file);
 
     // use `cursive_buffered_backend` crate to fix the flickering issue
     // when using `cursive` with `crossterm_backend` (See https://github.com/gyscos/Cursive/issues/142)
@@ -127,11 +127,33 @@ fn init_app_dirs() -> (std::path::PathBuf, std::path::PathBuf) {
     (config_dir, cache_dir)
 }
 
-fn init_auth(auth_file_str: &str) -> Option<config::Auth> {
-    match config::Auth::from_file(auth_file_str) {
+fn init_auth(auth_path: &std::path::Path) -> Option<config::Auth> {
+    if !auth_path.exists() {
+        match config::prompt_for_auth() {
+            None | Some(config::AuthPromptResult::Skip) => return None,
+            Some(config::AuthPromptResult::Credentials { username, password }) => {
+                if let Err(err) = client::verify_credentials(&username, &password) {
+                    eprintln!("Login failed: {err:#}. Starting without auth.");
+                    return None;
+                }
+                let auth = config::Auth { username, password };
+                if let Err(err) = auth.write_to_file(auth_path) {
+                    eprintln!("Failed to write auth to {}: {err:#}", auth_path.display());
+                    return None;
+                }
+                println!("Wrote auth to {}", auth_path.display());
+                return Some(auth);
+            }
+        }
+    }
+
+    match config::Auth::from_file(auth_path) {
         Ok(auth) => Some(auth),
         Err(err) => {
-            tracing::warn!("Failed to get authentication from {}: {err}", auth_file_str);
+            tracing::warn!(
+                "Failed to get authentication from {}: {err}",
+                auth_path.display()
+            );
             None
         }
     }
@@ -184,10 +206,11 @@ fn main() {
 
     config::load_config(config_file_str);
 
-    let auth = init_auth(
-        args.get_one::<String>("auth")
-            .expect("`auth` argument should have a default value"),
-    );
+    let auth_file_str = args
+        .get_one::<String>("auth")
+        .expect("`auth` argument should have a default value");
+    let auth_path = std::path::PathBuf::from(auth_file_str);
+    let auth = init_auth(&auth_path);
     let start_id = args.get_one::<u32>("start_id").cloned();
-    run(auth, start_id);
+    run(auth, start_id, auth_path);
 }

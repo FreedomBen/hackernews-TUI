@@ -152,18 +152,19 @@ For more information about configuring the application's key mappings or definin
 
 ### Global shortcuts
 
-| Command                 | Description             | Default Shortcut   |
-| ----------------------- | ----------------------- | ------------------ |
-| `open_help_dialog`      | Open the help dialog    | `?`                |
-| `close_dialog`          | Close a dialog          | `esc`              |
-| `quit`                  | Quit the application    | `[q, C-c]`         |
-| `goto_previous_view`    | Go to the previous view | `[backspace, C-p]` |
-| `goto_search_view`      | Go to search view       | `[/, C-s]`         |
-| `goto_front_page_view`  | Go to front page view   | `F1`               |
-| `goto_all_stories_view` | Go to all stories view  | `F2`               |
-| `goto_ask_hn_view`      | Go to ask HN view       | `F3`               |
-| `goto_show_hn_view`     | Go to show HN view      | `F4`               |
-| `goto_jobs_view`        | Go to jobs view         | `F5`               |
+| Command                 | Description                             | Default Shortcut   |
+| ----------------------- | --------------------------------------- | ------------------ |
+| `open_help_dialog`      | Open the help dialog                    | `?`                |
+| `open_login_dialog`     | Open the Hacker News login dialog       | `L`                |
+| `close_dialog`          | Close a dialog                          | `esc`              |
+| `quit`                  | Quit the application                    | `[q, C-c]`         |
+| `goto_previous_view`    | Go to the previous view                 | `[backspace, C-p]` |
+| `goto_search_view`      | Go to search view                       | `[/, C-s]`         |
+| `goto_front_page_view`  | Go to front page view                   | `F1`               |
+| `goto_all_stories_view` | Go to all stories view                  | `F2`               |
+| `goto_ask_hn_view`      | Go to ask HN view                       | `F3`               |
+| `goto_show_hn_view`     | Go to show HN view                      | `F4`               |
+| `goto_jobs_view`        | Go to jobs view                         | `F5`               |
 
 ### Edit shortcuts
 
@@ -287,14 +288,26 @@ For further information about the application's configurations, please refer to 
 
 ## Authentication
 
-Users can authenticate their account by specifying `username` and `password` inside the `hn-auth.toml` file:
+Users can authenticate their Hacker News account in any of three ways:
 
-```toml
-username=""
-password=""
-```
+1. **First-run prompt.** If no `hn-auth.toml` exists, the application will ask
+   for a username and password on startup, verify them against Hacker News,
+   and (on success) write the file for you. On Unix the file is created with
+   mode `0600` so other local users can't read it.
+2. **In-app login dialog.** Press `L` at any time to open a login dialog.
+   Successful credentials are verified, used to log the running session in,
+   and saved to `hn-auth.toml`.
+3. **Manual edit.** Create `hn-auth.toml` yourself with:
 
-By default, the authentication file should be inside the same folder as the the general configuration file (`hn-tui.toml`), which can be configured by specifying the `-a` or `--auth` option.
+   ```toml
+   username = ""
+   password = ""
+   ```
+
+By default, the authentication file lives next to `hn-tui.toml`; pass `-a` /
+`--auth` to use a different path. Credentials are currently stored in
+plaintext TOML — protect the file with filesystem permissions and don't
+check it into version control.
 
 ## Logging
 
