@@ -90,8 +90,8 @@ backward_delete_char = "backspace"
 [keymap.scroll_keymap]
 up = ["up", "k"]
 down = ["down", "j"]
-page_up = ["page_up", "u"]
-page_down = ["page_down", "d"]
+page_up = ["page_up", "u", "C-u"]
+page_down = ["page_down", "d", "C-d"]
 top = ["home", "g"]
 bottom = ["end", "G"]
 

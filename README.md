@@ -178,14 +178,14 @@ For more information about configuring the application's key mappings or definin
 
 ## Scrolling shortcuts
 
-| Command     | Description             | Default Shortcut |
-| ----------- | ----------------------- | ---------------- |
-| `up`        | Scroll up               | `[k, up]`        |
-| `down`      | Scroll down             | `[j, down]`      |
-| `page_down` | Scroll up half a page   | `[d, page_down]` |
-| `page_up`   | Scroll down half a page | `[u, page_up]`   |
-| `top`       | Scroll to top           | `[g, home]`      |
-| `bottom`    | Scroll to bottom        | `[G, end]`       |
+| Command     | Description             | Default Shortcut      |
+| ----------- | ----------------------- | --------------------- |
+| `up`        | Scroll up               | `[k, up]`             |
+| `down`      | Scroll down             | `[j, down]`           |
+| `page_up`   | Scroll up half a page   | `[u, page_up, C-u]`   |
+| `page_down` | Scroll down half a page | `[d, page_down, C-d]` |
+| `top`       | Scroll to top           | `[g, home]`           |
+| `bottom`    | Scroll to bottom        | `[G, end]`            |
 
 ### Shortcuts for each `View`
 
