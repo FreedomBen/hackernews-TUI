@@ -1519,7 +1519,7 @@ mod tests {
             "</tr>",
         );
         let data = parse_vote_data_from_content(html).unwrap();
-        assert!(data.get("7").is_none());
+        assert!(!data.contains_key("7"));
     }
 
     #[test]
@@ -1915,7 +1915,7 @@ mod tests {
         // so there should be no entry at all for 47891300.
         let data = parse_vote_data_from_content(ITEM_PAGE_AUTHENTICATED_HTML).unwrap();
         assert!(
-            data.get("47891300").is_none(),
+            !data.contains_key("47891300"),
             "own comment should not appear in vote state"
         );
     }
