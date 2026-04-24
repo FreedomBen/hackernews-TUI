@@ -166,10 +166,10 @@ pub struct StoryViewKeyMap {
 impl Default for StoryViewKeyMap {
     fn default() -> Self {
         StoryViewKeyMap {
-            next_story_tag: Keys::new(vec!['l'.into()]),
-            prev_story_tag: Keys::new(vec!['h'.into()]),
-            next_story: Keys::new(vec!['j'.into()]),
-            prev_story: Keys::new(vec!['k'.into()]),
+            next_story_tag: Keys::new(vec!['l'.into(), event::Key::Right.into()]),
+            prev_story_tag: Keys::new(vec!['h'.into(), event::Key::Left.into()]),
+            next_story: Keys::new(vec!['j'.into(), event::Key::Down.into()]),
+            prev_story: Keys::new(vec!['k'.into(), event::Key::Up.into()]),
             goto_story: Keys::new(vec!['g'.into()]),
 
             next_page: Keys::new(vec!['n'.into()]),
@@ -243,12 +243,12 @@ pub struct CommentViewKeyMap {
 impl Default for CommentViewKeyMap {
     fn default() -> Self {
         CommentViewKeyMap {
-            next_comment: Keys::new(vec!['j'.into()]),
-            prev_comment: Keys::new(vec!['k'.into()]),
+            next_comment: Keys::new(vec!['j'.into(), event::Key::Down.into()]),
+            prev_comment: Keys::new(vec!['k'.into(), event::Key::Up.into()]),
             next_top_level_comment: Keys::new(vec!['n'.into()]),
             prev_top_level_comment: Keys::new(vec!['p'.into()]),
-            next_leq_level_comment: Keys::new(vec!['l'.into()]),
-            prev_leq_level_comment: Keys::new(vec!['h'.into()]),
+            next_leq_level_comment: Keys::new(vec!['l'.into(), event::Key::Right.into()]),
+            prev_leq_level_comment: Keys::new(vec!['h'.into(), event::Key::Left.into()]),
             parent_comment: Keys::new(vec!['u'.into()]),
 
             open_comment_in_browser: Keys::new(vec!['c'.into()]),

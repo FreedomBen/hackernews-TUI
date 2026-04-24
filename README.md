@@ -194,10 +194,10 @@ For more information about configuring the application's key mappings or definin
 
 | Command                        | Description                                                                        | Default Shortcut |
 | ------------------------------ | ---------------------------------------------------------------------------------- | ---------------- |
-| `next_story`                   | Focus the next story                                                               | `j`              |
-| `prev_story`                   | Focus the previous story                                                           | `k`              |
-| `next_story_tag`               | Go to the next story tag                                                           | `l`              |
-| `previous_story_tag`           | Go to the previous story tag                                                       | `h`              |
+| `next_story`                   | Focus the next story                                                               | `[j, down]`      |
+| `prev_story`                   | Focus the previous story                                                           | `[k, up]`        |
+| `next_story_tag`               | Go to the next story tag                                                           | `[l, right]`     |
+| `previous_story_tag`           | Go to the previous story tag                                                       | `[h, left]`      |
 | `goto_story`                   | Focus the {story_id}-th story                                                      | `{story_id} g`   |
 | `goto_story_comment_view`      | Go the comment view associated with the focused story                              | `enter`          |
 | `open_article_in_browser`      | Open in browser the focused story's article                                        | `o`              |
@@ -238,10 +238,10 @@ For more information about configuring the application's key mappings or definin
 
 | Command                        | Description                                                                     | Default Shortcut |
 | ------------------------------ | ------------------------------------------------------------------------------- | ---------------- |
-| `next_comment`                 | Focus the next comment                                                          | `j`              |
-| `prev_comment`                 | Focus the previous comment                                                      | `k`              |
-| `next_leq_level_comment`       | Focus the next comment with smaller or equal level                              | `l`              |
-| `prev_leq_level_comment`       | Focus the previous comment with smaller or equal level                          | `h`              |
+| `next_comment`                 | Focus the next comment                                                          | `[j, down]`      |
+| `prev_comment`                 | Focus the previous comment                                                      | `[k, up]`        |
+| `next_leq_level_comment`       | Focus the next comment with smaller or equal level                              | `[l, right]`     |
+| `prev_leq_level_comment`       | Focus the previous comment with smaller or equal level                          | `[h, left]`      |
 | `next_top_level_comment`       | Focus the next top level comment                                                | `n`              |
 | `prev_top_level_comment`       | Focus the previous top level comment                                            | `p`              |
 | `parent_comment`               | Focus the parent comment (if exists)                                            | `u`              |

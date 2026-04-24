@@ -97,8 +97,8 @@ top = ["home", "g"]
 bottom = ["end", "G"]
 
 [keymap.story_view_keymap]
-next_story = "j"
-prev_story = "k"
+next_story = ["j", "down"]
+prev_story = ["k", "up"]
 goto_story = "g"
 next_page = "n"
 prev_page = "p"
@@ -107,8 +107,8 @@ open_article_in_browser = "o"
 open_article_in_article_view = "O"
 open_story_in_browser = "s"
 goto_story_comment_view = "enter"
-next_story_tag = "l"
-prev_story_tag = "h"
+next_story_tag = ["l", "right"]
+prev_story_tag = ["h", "left"]
 find_in_view = ["/", "C-f"]
 find_next_match = "n"
 find_prev_match = "N"
@@ -118,12 +118,12 @@ to_navigation_mode = "esc"
 to_search_mode = "i"
 
 [keymap.comment_view_keymap]
-next_comment = "j"
-prev_comment = "k"
+next_comment = ["j", "down"]
+prev_comment = ["k", "up"]
 next_top_level_comment = "n"
 prev_top_level_comment = "p"
-next_leq_level_comment = "l"
-prev_leq_level_comment = "h"
+next_leq_level_comment = ["l", "right"]
+prev_leq_level_comment = ["h", "left"]
 parent_comment = "u"
 open_comment_in_browser = "c"
 open_story_in_browser = "s"
