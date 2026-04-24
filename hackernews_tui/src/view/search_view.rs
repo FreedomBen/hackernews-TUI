@@ -331,23 +331,44 @@ fn construct_search_main_view(client: &'static client::HNClient, cb_sink: CbSink
             }
             SearchViewMode::Search => Some(EventResult::Ignored),
         })
-        .on_pre_event_inner(story_view_keymap.next_page, |s, _| match s.mode {
-            SearchViewMode::Navigation => {
-                s.page += 1;
-                s.retrieve_matched_stories();
-                Some(EventResult::Consumed(None))
-            }
-            SearchViewMode::Search => Some(EventResult::Ignored),
-        })
-        .on_pre_event_inner(story_view_keymap.prev_page, |s, _| match s.mode {
-            SearchViewMode::Navigation => {
-                if s.page > 0 {
-                    s.page -= 1;
+        // Paging is gated on the find state because the default
+        // bindings (`n`/`N`) overlap with `find_next_match` /
+        // `find_prev_match`. Cursive fires every matching pre-event
+        // handler on one keypress, so without this gate a match jump
+        // would also trigger a page rebuild that clears match_ids.
+        .on_pre_event_inner(story_view_keymap.next_page, {
+            let find_next_trigger = story_view_keymap.find_next_match.clone();
+            move |s, e| match s.mode {
+                SearchViewMode::Navigation => {
+                    if find_next_trigger.has_event(e)
+                        && !s.find_state.borrow().match_ids.is_empty()
+                    {
+                        return None;
+                    }
+                    s.page += 1;
                     s.retrieve_matched_stories();
+                    Some(EventResult::Consumed(None))
                 }
-                Some(EventResult::Consumed(None))
+                SearchViewMode::Search => Some(EventResult::Ignored),
             }
-            SearchViewMode::Search => Some(EventResult::Ignored),
+        })
+        .on_pre_event_inner(story_view_keymap.prev_page, {
+            let find_prev_trigger = story_view_keymap.find_prev_match.clone();
+            move |s, e| match s.mode {
+                SearchViewMode::Navigation => {
+                    if find_prev_trigger.has_event(e)
+                        && !s.find_state.borrow().match_ids.is_empty()
+                    {
+                        return None;
+                    }
+                    if s.page > 0 {
+                        s.page -= 1;
+                        s.retrieve_matched_stories();
+                    }
+                    Some(EventResult::Consumed(None))
+                }
+                SearchViewMode::Search => Some(EventResult::Ignored),
+            }
         })
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(SearchView::construct_on_event_help_view());

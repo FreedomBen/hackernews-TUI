@@ -654,6 +654,10 @@ pub fn construct_story_view(
         .unwrap_or_else(|| panic!("unkwnown tag {tag}"));
 
     let story_view_keymap = config::get_story_view_keymap().clone();
+    let find_state_for_next_page = find_state_for_next.clone();
+    let find_state_for_prev_page = find_state_for_next.clone();
+    let find_next_for_next_page = story_view_keymap.find_next_match.clone();
+    let find_prev_for_prev_page = story_view_keymap.find_prev_match.clone();
 
     // Because we re-use the story main view to construct a search view,
     // some of the story keymaps need to be handled here instead of by the main view like
@@ -677,8 +681,9 @@ pub fn construct_story_view(
         })
         // Context-dependent match navigation: when a find session is
         // active, `n`/`N` jump between matches; otherwise they fall
-        // through to the paging handlers below. Registered first so the
-        // paging handlers only see the event when find is inactive.
+        // through to the paging handlers below. Cursive runs every
+        // matching pre-event callback, so the paging handlers also
+        // gate themselves on the find state to avoid double-firing.
         .on_pre_event_inner(story_view_keymap.find_next_match.clone(), move |_, _| {
             let mut state = find_state_for_next.borrow_mut();
             if state.match_ids.is_empty() {
@@ -743,30 +748,48 @@ pub fn construct_story_view(
                 false,
             );
         })
-        // paging
-        .on_pre_event(story_view_keymap.prev_page, move |s| {
-            if page > 0 {
+        // Paging. Gated on the find state because the default bindings
+        // overlap with `find_next_match`/`find_prev_match` (both `n`/`N`)
+        // and Cursive fires every matching pre-event handler on one
+        // keypress — without the gate, a match jump would be stomped by
+        // a page rebuild.
+        .on_pre_event_inner(story_view_keymap.prev_page, move |_, e| {
+            if find_prev_for_prev_page.has_event(e)
+                && !find_state_for_prev_page.borrow().match_ids.is_empty()
+            {
+                return None;
+            }
+            Some(EventResult::with_cb(move |s| {
+                if page > 0 {
+                    construct_and_add_new_story_view(
+                        s,
+                        client,
+                        tag,
+                        sort_mode,
+                        page - 1,
+                        numeric_filters,
+                        true,
+                    );
+                }
+            }))
+        })
+        .on_pre_event_inner(story_view_keymap.next_page, move |_, e| {
+            if find_next_for_next_page.has_event(e)
+                && !find_state_for_next_page.borrow().match_ids.is_empty()
+            {
+                return None;
+            }
+            Some(EventResult::with_cb(move |s| {
                 construct_and_add_new_story_view(
                     s,
                     client,
                     tag,
                     sort_mode,
-                    page - 1,
+                    page + 1,
                     numeric_filters,
                     true,
                 );
-            }
-        })
-        .on_pre_event(story_view_keymap.next_page, move |s| {
-            construct_and_add_new_story_view(
-                s,
-                client,
-                tag,
-                sort_mode,
-                page + 1,
-                numeric_filters,
-                true,
-            );
+            }))
         })
 }
 

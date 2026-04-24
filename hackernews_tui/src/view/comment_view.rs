@@ -457,6 +457,10 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
     let find_state_for_next = find_state.clone();
     let find_state_for_prev = find_state.clone();
     let find_state_for_esc = find_state.clone();
+    let find_state_for_ntl = find_state.clone();
+    let find_state_for_ptl = find_state.clone();
+    let find_next_for_ntl = comment_view_keymap.find_next_match.clone();
+    let find_prev_for_ptl = comment_view_keymap.find_prev_match.clone();
 
     OnEventView::new(CommentView::new(data, find_state))
         .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
@@ -577,12 +581,27 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
             state.pending = Some(FindSignal::JumpPrev);
             Some(EventResult::Consumed(None))
         })
-        .on_pre_event_inner(comment_view_keymap.next_top_level_comment, move |s, _| {
+        // Cursive runs every matching pre-event callback, not just the
+        // first — so on the default binding (`n`) both this handler and
+        // `find_next_match` fire. When a find session is active and the
+        // event also matches `find_next_match`, step aside so the match
+        // jump doesn't land on a stale focus.
+        .on_pre_event_inner(comment_view_keymap.next_top_level_comment, move |s, e| {
+            if find_next_for_ntl.has_event(e)
+                && !find_state_for_ntl.borrow().match_ids.is_empty()
+            {
+                return None;
+            }
             let id = s.get_focus_index();
             let next_id = s.find_item_id_by_max_level(id, 0, NavigationDirection::Next);
             s.set_focus_index(next_id)
         })
-        .on_pre_event_inner(comment_view_keymap.prev_top_level_comment, move |s, _| {
+        .on_pre_event_inner(comment_view_keymap.prev_top_level_comment, move |s, e| {
+            if find_prev_for_ptl.has_event(e)
+                && !find_state_for_ptl.borrow().match_ids.is_empty()
+            {
+                return None;
+            }
             let id = s.get_focus_index();
             let next_id = s.find_item_id_by_max_level(id, 0, NavigationDirection::Previous);
             s.set_focus_index(next_id)
