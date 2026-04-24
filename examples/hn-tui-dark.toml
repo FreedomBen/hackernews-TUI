@@ -141,6 +141,8 @@ open_link_in_browser = "o"
 open_link_in_article_view = "O"
 open_link_dialog = "l"
 find_in_view = ["/", "C-f"]
+find_next_match = "n"
+find_prev_match = "N"
 
 [keymap.link_dialog_keymap]
 next = ["j", "down"]

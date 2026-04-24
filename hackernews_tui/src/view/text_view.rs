@@ -75,6 +75,29 @@ impl TextView {
         let row_width = self.width.saturating_sub(self.padding.width());
         self.rows = lines::spans::LinesIterator::new(&self.content, row_width).collect();
     }
+
+    /// Map a byte offset in the source string to the row index that
+    /// contains it, if any. Cursive's row `Segment`s use span-local
+    /// byte offsets, so we translate via cumulative span bases before
+    /// comparing against the requested source offset.
+    pub fn row_for_byte_offset(&self, offset: usize) -> Option<usize> {
+        let mut bases: Vec<usize> = Vec::with_capacity(8);
+        let mut cursor = 0usize;
+        for span in self.content.spans() {
+            bases.push(cursor);
+            cursor += span.content.len();
+        }
+        self.rows.iter().position(|row| {
+            row.segments.iter().any(|seg| {
+                let Some(&base) = bases.get(seg.span_id) else {
+                    return false;
+                };
+                let src_start = base + seg.start;
+                let src_end = base + seg.end;
+                src_start <= offset && offset < src_end
+            })
+        })
+    }
 }
 
 impl View for TextView {

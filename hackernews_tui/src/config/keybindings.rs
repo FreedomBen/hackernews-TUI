@@ -280,6 +280,8 @@ pub struct ArticleViewKeyMap {
     pub open_link_in_article_view: Keys,
 
     pub find_in_view: Keys,
+    pub find_next_match: Keys,
+    pub find_prev_match: Keys,
 }
 
 impl Default for ArticleViewKeyMap {
@@ -291,6 +293,8 @@ impl Default for ArticleViewKeyMap {
             open_link_in_article_view: Keys::new(vec!['O'.into()]),
 
             find_in_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('f')]),
+            find_next_match: Keys::new(vec!['n'.into()]),
+            find_prev_match: Keys::new(vec!['N'.into()]),
         }
     }
 }

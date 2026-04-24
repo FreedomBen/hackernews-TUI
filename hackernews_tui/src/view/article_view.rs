@@ -1,4 +1,5 @@
 use super::find_bar::{self, FindSignal, FindStateRef};
+use super::text_view::TextView as HnTextView;
 use super::{async_view, help_view::HasHelpView, link_dialog, traits::*, utils};
 use crate::prelude::*;
 
@@ -17,6 +18,13 @@ pub struct ArticleView {
     /// `apply_find_query` layers highlights on top of this; `clear`
     /// restores the displayed text back to it.
     base_content: Option<StyledString>,
+    /// Source-byte ranges of the current find matches, in document
+    /// order. Populated by `apply_find_query`; consumed by the
+    /// jump-to-match handlers.
+    match_ranges: Vec<(usize, usize)>,
+    /// Index of the last match jumped to. `None` until the user first
+    /// invokes `find_next_match` or `find_prev_match`.
+    current_match: Option<usize>,
 }
 
 impl ViewWrapper for ArticleView {
@@ -47,8 +55,11 @@ impl ViewWrapper for ArticleView {
             }
         }
 
-        self.process_find_signal();
+        // Run layout before draining find signals: jump-to-match
+        // translates byte offsets to row indices via TextView row data,
+        // which only exists after `TextView::layout` runs.
         self.with_view_mut(|v| v.layout(size));
+        self.process_find_signal();
     }
 
     fn wrap_take_focus(&mut self, _: Direction) -> Result<EventResult, CannotFocus> {
@@ -73,7 +84,7 @@ impl ArticleView {
                     .center()
                     .full_width(),
             )
-            .child(PaddedView::lrtb(1, 1, 1, 1, TextView::new("")))
+            .child(PaddedView::lrtb(1, 1, 1, 1, HnTextView::new("")))
             .scrollable();
 
         ArticleView {
@@ -86,6 +97,8 @@ impl ArticleView {
 
             find_state,
             base_content: None,
+            match_ranges: Vec::new(),
+            current_match: None,
         }
     }
 
@@ -95,16 +108,13 @@ impl ArticleView {
             .get_inner_mut()
             .get_child_mut(2)
             .expect("The article view should have 3 children")
-            .downcast_mut::<PaddedView<TextView>>()
+            .downcast_mut::<PaddedView<HnTextView>>()
             .expect("The 3rd child of the article view should be a padded text view")
             .get_inner_mut()
             .set_content(new_content)
     }
 
-    /// Poll the shared find state and apply any pending signal. The
-    /// article view only supports highlighting; jump-to-match is a
-    /// follow-up (scrolling a single large `TextView` to a byte offset
-    /// needs row-offset plumbing that doesn't exist yet).
+    /// Poll the shared find state and apply any pending signal.
     fn process_find_signal(&mut self) {
         let signal = self.find_state.borrow_mut().pending.take();
         match signal {
@@ -118,9 +128,8 @@ impl ArticleView {
                 state.query.clear();
                 state.match_ids.clear();
             }
-            Some(FindSignal::JumpNext) | Some(FindSignal::JumpPrev) => {
-                // no-op: jump requires row-offset scrolling, not yet wired
-            }
+            Some(FindSignal::JumpNext) => self.jump_to_next_match(),
+            Some(FindSignal::JumpPrev) => self.jump_to_prev_match(),
             None => {}
         }
     }
@@ -133,14 +142,88 @@ impl ArticleView {
             .component_style
             .matched_highlight
             .into();
-        let (highlighted, _count) = find_bar::highlight_matches(&base, query, style);
+        let (highlighted, ranges) = find_bar::highlight_matches(&base, query, style);
+        self.match_ranges = ranges;
+        self.current_match = None;
+        // Publish match presence so outer keymap logic can fall through
+        // `n`/`N` to scroll bindings when no session is active.
+        self.find_state.borrow_mut().match_ids = (0..self.match_ranges.len()).collect();
         self.set_article_content(highlighted);
     }
 
     fn clear_find_highlights(&mut self) {
+        self.match_ranges.clear();
+        self.current_match = None;
         if let Some(base) = self.base_content.clone() {
             self.set_article_content(base);
         }
+    }
+
+    fn jump_to_next_match(&mut self) {
+        if self.match_ranges.is_empty() {
+            return;
+        }
+        let next = match self.current_match {
+            None => 0,
+            Some(i) => (i + 1) % self.match_ranges.len(),
+        };
+        self.current_match = Some(next);
+        let (offset, _) = self.match_ranges[next];
+        self.scroll_to_source_offset(offset);
+    }
+
+    fn jump_to_prev_match(&mut self) {
+        if self.match_ranges.is_empty() {
+            return;
+        }
+        let len = self.match_ranges.len();
+        let prev = match self.current_match {
+            None => len - 1,
+            Some(0) => len - 1,
+            Some(i) => i - 1,
+        };
+        self.current_match = Some(prev);
+        let (offset, _) = self.match_ranges[prev];
+        self.scroll_to_source_offset(offset);
+    }
+
+    /// Scroll the ScrollView so the row containing `offset` in the
+    /// article body lands at (or near) the top of the viewport. The
+    /// article body is child 2 of the inner LinearLayout, wrapped in a
+    /// `PaddedView` with a 1-row top padding.
+    fn scroll_to_source_offset(&mut self, offset: usize) {
+        let body_row = {
+            let linear = self.view.get_inner();
+            let Some(padded) = linear
+                .get_child(2)
+                .and_then(|c| c.downcast_ref::<PaddedView<HnTextView>>())
+            else {
+                return;
+            };
+            match padded.get_inner().row_for_byte_offset(offset) {
+                Some(r) => r,
+                None => return,
+            }
+        };
+
+        let width = self.width.max(1);
+        let constraint = Vec2::new(width, 1);
+        let prefix_height = {
+            let linear = self.view.get_inner_mut();
+            let mut h = 0usize;
+            for i in 0..2 {
+                if let Some(child) = linear.get_child_mut(i) {
+                    h += child.required_size(constraint).y;
+                }
+            }
+            // +1 for the PaddedView's top padding on child 2.
+            h + 1
+        };
+
+        let target_y = prefix_height + body_row;
+        self.view
+            .get_scroller_mut()
+            .set_offset(Vec2::new(0, target_y));
     }
 
     inner_getters!(self.view: ScrollView<LinearLayout>);
@@ -171,6 +254,8 @@ fn construct_article_main_view(
     let article_view_keymap = config::get_article_view_keymap().clone();
     let find_state = find_bar::FindState::new_ref();
     let find_state_for_key = find_state.clone();
+    let find_state_for_next = find_state.clone();
+    let find_state_for_prev = find_state.clone();
 
     OnEventView::new(ArticleView::new(article, find_state))
         .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
@@ -220,7 +305,8 @@ fn construct_article_main_view(
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(ArticleView::construct_on_event_help_view())
         })
-        // Open the find-on-page dialog. Highlight-only; no match jump.
+        // Open the find-on-page dialog. Enter in the dialog sends
+        // JumpNext, which scrolls to the next match.
         .on_pre_event(article_view_keymap.find_in_view.clone(), move |s| {
             {
                 let mut state = find_state_for_key.borrow_mut();
@@ -228,6 +314,26 @@ fn construct_article_main_view(
                 state.pending = Some(FindSignal::Clear);
             }
             s.add_layer(find_bar::construct_find_dialog(find_state_for_key.clone()));
+        })
+        // Context-dependent match nav: `n`/`N` jump between matches
+        // only while a find session is active. Registered as
+        // `on_pre_event_inner` so returning None lets other scroll
+        // bindings pick up the event.
+        .on_pre_event_inner(article_view_keymap.find_next_match.clone(), move |_, _| {
+            let mut state = find_state_for_next.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpNext);
+            Some(EventResult::Consumed(None))
+        })
+        .on_pre_event_inner(article_view_keymap.find_prev_match.clone(), move |_, _| {
+            let mut state = find_state_for_prev.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpPrev);
+            Some(EventResult::Consumed(None))
         })
         .on_scroll_events()
 }

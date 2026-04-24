@@ -597,6 +597,18 @@ impl HasHelpView for search_view::SearchView {
                             story_view_keymap.downvote.to_string(),
                             "Toggle downvoting the focused story (requires downvote privilege)",
                         ),
+                        Command::new(
+                            story_view_keymap.find_in_view.to_string(),
+                            "Navigation mode only — Find on page: highlight matching stories (enter jumps to next, esc clears)",
+                        ),
+                        Command::new(
+                            story_view_keymap.find_next_match.to_string(),
+                            "Navigation mode only — Jump to next find match (when a find session is active)",
+                        ),
+                        Command::new(
+                            story_view_keymap.find_prev_match.to_string(),
+                            "Navigation mode only — Jump to previous find match (when a find session is active)",
+                        ),
                     ],
                     default_other_commands(),
                 ]
@@ -639,10 +651,20 @@ impl HasHelpView for article_view::ArticleView {
             CommandGroup::new(
                 "Others",
                 [
-                    vec![Command::new(
-                        article_view_keymap.find_in_view.to_string(),
-                        "Find on page: highlight matches in the article (esc clears)",
-                    )],
+                    vec![
+                        Command::new(
+                            article_view_keymap.find_in_view.to_string(),
+                            "Find on page: highlight matches in the article (enter jumps to next, esc clears)",
+                        ),
+                        Command::new(
+                            article_view_keymap.find_next_match.to_string(),
+                            "Jump to next find match (when a find session is active)",
+                        ),
+                        Command::new(
+                            article_view_keymap.find_prev_match.to_string(),
+                            "Jump to previous find match (when a find session is active)",
+                        ),
+                    ],
                     default_other_commands(),
                 ]
                 .concat(),

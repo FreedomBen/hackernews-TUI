@@ -334,8 +334,8 @@ impl StoryView {
         let mut matches = Vec::new();
         for id in 0..self.stories.len() {
             let base = self.story_row_text(id);
-            let (new_text, count) = find_bar::highlight_matches(&base, query, style);
-            if count > 0 {
+            let (new_text, ranges) = find_bar::highlight_matches(&base, query, style);
+            if !ranges.is_empty() {
                 matches.push(id);
             }
             self.set_story_row_content(id, new_text);

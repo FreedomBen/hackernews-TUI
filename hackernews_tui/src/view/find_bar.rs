@@ -42,20 +42,21 @@ impl FindState {
 
 /// Apply `match_style` on top of each existing span in `content` wherever
 /// `query` occurs (ASCII case-insensitive). Returns the rebuilt string
-/// and the number of matches found.
+/// and the source-byte ranges of every match (useful for callers that
+/// need to scroll to a specific match, e.g. article view jump-to-match).
 pub fn highlight_matches(
     content: &StyledString,
     query: &str,
     match_style: Style,
-) -> (StyledString, usize) {
+) -> (StyledString, Vec<(usize, usize)>) {
     if query.is_empty() {
-        return (content.clone(), 0);
+        return (content.clone(), Vec::new());
     }
     let src = content.source();
     let src_lower = src.to_ascii_lowercase();
     let q_lower = query.to_ascii_lowercase();
     if q_lower.is_empty() || q_lower.len() > src_lower.len() {
-        return (content.clone(), 0);
+        return (content.clone(), Vec::new());
     }
 
     let mut ranges: Vec<(usize, usize)> = Vec::new();
@@ -73,7 +74,7 @@ pub fn highlight_matches(
     }
 
     if ranges.is_empty() {
-        return (content.clone(), 0);
+        return (content.clone(), Vec::new());
     }
 
     let mut out = StyledString::new();
@@ -113,7 +114,7 @@ pub fn highlight_matches(
         offset = span_end;
     }
 
-    (out, ranges.len())
+    (out, ranges)
 }
 
 /// Construct the find-on-page dialog overlay. Typing updates the shared
@@ -200,16 +201,16 @@ mod tests {
     #[test]
     fn empty_query_returns_input_unchanged() {
         let input = StyledString::plain("hello world");
-        let (out, count) = highlight_matches(&input, "", make_style());
-        assert_eq!(count, 0);
+        let (out, ranges) = highlight_matches(&input, "", make_style());
+        assert!(ranges.is_empty());
         assert_eq!(out.source(), "hello world");
     }
 
     #[test]
     fn counts_all_occurrences_case_insensitively() {
         let input = StyledString::plain("Foo foo FOO");
-        let (_, count) = highlight_matches(&input, "foo", make_style());
-        assert_eq!(count, 3);
+        let (_, ranges) = highlight_matches(&input, "foo", make_style());
+        assert_eq!(ranges.len(), 3);
     }
 
     #[test]
@@ -222,16 +223,23 @@ mod tests {
     #[test]
     fn zero_matches_when_query_absent() {
         let input = StyledString::plain("hello");
-        let (_, count) = highlight_matches(&input, "zzz", make_style());
-        assert_eq!(count, 0);
+        let (_, ranges) = highlight_matches(&input, "zzz", make_style());
+        assert!(ranges.is_empty());
     }
 
     #[test]
     fn handles_multibyte_text_without_panicking() {
         let input = StyledString::plain("café matcha café");
-        let (_, count) = highlight_matches(&input, "café", make_style());
+        let (_, ranges) = highlight_matches(&input, "café", make_style());
         // ASCII-only lowering won't match "café" against "CAFÉ"; just
         // verify it matches itself and produces a valid string.
-        assert_eq!(count, 2);
+        assert_eq!(ranges.len(), 2);
+    }
+
+    #[test]
+    fn returns_source_byte_ranges_for_each_match() {
+        let input = StyledString::plain("foo bar foo");
+        let (_, ranges) = highlight_matches(&input, "foo", make_style());
+        assert_eq!(ranges, vec![(0, 3), (8, 11)]);
     }
 }

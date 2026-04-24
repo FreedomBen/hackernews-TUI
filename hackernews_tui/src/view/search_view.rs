@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use super::{find_bar, help_view::*, story_view, text_view::EditableTextView, utils};
+use super::find_bar::{self, FindSignal, FindStateRef};
+use super::{help_view::*, story_view, text_view::EditableTextView, utils};
 use crate::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -29,12 +30,19 @@ pub struct SearchView {
 
     client: &'static client::HNClient,
     cb_sink: CbSink,
+
+    /// Shared find-on-page state. Re-used across inner `StoryView`
+    /// rebuilds so an in-flight session survives rendering refreshes
+    /// (though rebuild does clear match_ids — indices point at the
+    /// previous story list).
+    find_state: FindStateRef,
 }
 
 impl SearchView {
     /// constructs new `SearchView`
     pub fn new(client: &'static client::HNClient, cb_sink: CbSink) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
+        let find_state = find_bar::FindState::new_ref();
 
         let view = LinearLayout::vertical()
             .child(
@@ -50,16 +58,15 @@ impl SearchView {
                 // Search results come from Algolia with arbitrary query +
                 // sort, so no single HN listing page matches. Pass an empty
                 // vote map; the story view falls back to lazy per-item
-                // fetches on first vote. The find state is unused inside
-                // the search view (there's no find keybinding wired) but
-                // the story view still needs to own one.
+                // fetches on first vote. Share the find state so the outer
+                // wrapper's find-on-page dialog drives the inner StoryView.
                 story_view::construct_story_main_view(
                     vec![],
                     client,
                     0,
                     cb_sink.clone(),
                     HashMap::new(),
-                    find_bar::FindState::new_ref(),
+                    find_state.clone(),
                 )
                 .full_height(),
             );
@@ -73,6 +80,7 @@ impl SearchView {
             cb_sink,
             sender,
             receiver,
+            find_state,
         }
     }
 
@@ -146,6 +154,15 @@ impl SearchView {
 
     /// updates the Story View with new matched stories
     fn update_stories_view(&mut self, stories: Vec<Story>) {
+        // Match ids point into the previous story list, so a rebuild
+        // invalidates any in-flight find session. Clear before
+        // swapping views.
+        {
+            let mut state = self.find_state.borrow_mut();
+            state.query.clear();
+            state.match_ids.clear();
+            state.pending = Some(FindSignal::Clear);
+        }
         self.view.remove_child(1);
         let starting_id = client::SEARCH_LIMIT * self.page;
         self.view.add_child(
@@ -155,7 +172,7 @@ impl SearchView {
                 starting_id,
                 self.cb_sink.clone(),
                 HashMap::new(),
-                find_bar::FindState::new_ref(),
+                self.find_state.clone(),
             )
             .full_height(),
         );
@@ -235,6 +252,55 @@ fn construct_search_main_view(client: &'static client::HNClient, cb_sink: CbSink
                     s.mode = SearchViewMode::Search;
                 }
                 Some(EventResult::Consumed(None))
+            }
+        })
+        // Find-on-page. Only bound in Navigation mode so that `/` and
+        // `C-f` keep their meaning inside the Search mode text input
+        // (character insert and cursor move respectively).
+        .on_pre_event_inner(story_view_keymap.find_in_view.clone(), |s, _| {
+            match s.mode {
+                SearchViewMode::Navigation => {
+                    {
+                        let mut state = s.find_state.borrow_mut();
+                        state.query.clear();
+                        state.pending = Some(FindSignal::Clear);
+                    }
+                    let find_state = s.find_state.clone();
+                    Some(EventResult::with_cb(move |siv| {
+                        siv.add_layer(find_bar::construct_find_dialog(find_state.clone()));
+                    }))
+                }
+                SearchViewMode::Search => None,
+            }
+        })
+        // Context-dependent match nav: `n`/`N` jump between matches
+        // when a find session is active, else fall through to paging.
+        // Registered before `next_page`/`prev_page` so match-nav wins
+        // while find is active.
+        .on_pre_event_inner(story_view_keymap.find_next_match.clone(), |s, _| {
+            match s.mode {
+                SearchViewMode::Navigation => {
+                    let mut state = s.find_state.borrow_mut();
+                    if state.match_ids.is_empty() {
+                        return None;
+                    }
+                    state.pending = Some(FindSignal::JumpNext);
+                    Some(EventResult::Consumed(None))
+                }
+                SearchViewMode::Search => None,
+            }
+        })
+        .on_pre_event_inner(story_view_keymap.find_prev_match.clone(), |s, _| {
+            match s.mode {
+                SearchViewMode::Navigation => {
+                    let mut state = s.find_state.borrow_mut();
+                    if state.match_ids.is_empty() {
+                        return None;
+                    }
+                    state.pending = Some(FindSignal::JumpPrev);
+                    Some(EventResult::Consumed(None))
+                }
+                SearchViewMode::Search => None,
             }
         })
         // paging/filtering commands while in NavigationMode

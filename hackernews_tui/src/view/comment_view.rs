@@ -92,8 +92,8 @@ impl CommentView {
         let mut matches = Vec::new();
         for id in 0..self.items.len() {
             let base = self.items[id].text(self.get_vote_status(self.items[id].id));
-            let (new_text, count) = find_bar::highlight_matches(&base, query, style);
-            if count > 0 {
+            let (new_text, ranges) = find_bar::highlight_matches(&base, query, style);
+            if !ranges.is_empty() {
                 matches.push(id);
             }
             self.get_item_view_mut(id)

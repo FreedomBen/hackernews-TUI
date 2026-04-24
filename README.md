@@ -221,7 +221,9 @@ For more information about configuring the application's key mappings or definin
 | `open_link_in_browser`      | Open in browser {link_id}-th link      | `{link_id} o`    |
 | `open_link_in_article_view` | Open in article view {link_id}-th link | `{link_id} O`    |
 | `open_link_dialog`          | Open link dialog                       | `l`              |
-| `find_in_view`              | Find on page: highlight matches in the article (esc clears) | `[/, C-f]` |
+| `find_in_view`              | Find on page: highlight matches in the article (enter jumps to next, esc clears) | `[/, C-f]` |
+| `find_next_match`           | Jump to next find match (when a find session is active)     | `n`              |
+| `find_prev_match`           | Jump to previous find match (when a find session is active) | `N`              |
 
 ##### Link dialog shortcuts
 
@@ -272,6 +274,8 @@ In `SearchView`, there are two modes: `Navigation` and `Search`. The default mod
 | -------------------- | ------------------------------------------ | ---------------- |
 | `to_search_mode`     | Enter `Search` mode from `Navigation` mode | `i`              |
 | `to_navigation_mode` | Enter `Navigation` mode from `Search` mode | `<esc>`          |
+
+In `Navigation` mode, the `find_in_view`, `find_next_match`, and `find_prev_match` shortcuts from the Story View keymap also apply — opening a find dialog, highlighting matching stories, and jumping between matches. They intentionally do nothing in `Search` mode so that `/` and `C-f` keep their meaning inside the query text input.
 
 ## Configuration
 
