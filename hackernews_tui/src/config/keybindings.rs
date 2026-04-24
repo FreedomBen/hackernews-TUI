@@ -157,6 +157,10 @@ pub struct StoryViewKeyMap {
     pub upvote: Keys,
     pub downvote: Keys,
     pub reply: Keys,
+
+    pub find_in_view: Keys,
+    pub find_next_match: Keys,
+    pub find_prev_match: Keys,
 }
 
 impl Default for StoryViewKeyMap {
@@ -181,6 +185,10 @@ impl Default for StoryViewKeyMap {
             upvote: Keys::new(vec!['v'.into()]),
             downvote: Keys::new(vec!['V'.into()]),
             reply: Keys::new(vec!['r'.into()]),
+
+            find_in_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('f')]),
+            find_next_match: Keys::new(vec!['n'.into()]),
+            find_prev_match: Keys::new(vec!['N'.into()]),
         }
     }
 }
@@ -228,6 +236,8 @@ pub struct CommentViewKeyMap {
     pub toggle_collapse_comment: Keys,
 
     pub find_in_view: Keys,
+    pub find_next_match: Keys,
+    pub find_prev_match: Keys,
 }
 
 impl Default for CommentViewKeyMap {
@@ -256,6 +266,8 @@ impl Default for CommentViewKeyMap {
             toggle_collapse_comment: Keys::new(vec![event::Key::Tab.into()]),
 
             find_in_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('f')]),
+            find_next_match: Keys::new(vec!['n'.into()]),
+            find_prev_match: Keys::new(vec!['N'.into()]),
         }
     }
 }
@@ -266,6 +278,8 @@ pub struct ArticleViewKeyMap {
     pub open_article_in_browser: Keys,
     pub open_link_in_browser: Keys,
     pub open_link_in_article_view: Keys,
+
+    pub find_in_view: Keys,
 }
 
 impl Default for ArticleViewKeyMap {
@@ -275,6 +289,8 @@ impl Default for ArticleViewKeyMap {
             open_article_in_browser: Keys::new(vec!['a'.into()]),
             open_link_in_browser: Keys::new(vec!['o'.into()]),
             open_link_in_article_view: Keys::new(vec!['O'.into()]),
+
+            find_in_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('f')]),
         }
     }
 }

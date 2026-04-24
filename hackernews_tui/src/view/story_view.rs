@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+use super::find_bar::{self, FindSignal, FindStateRef};
 use super::{
     article_view, async_view, comment_view, help_view::HasHelpView, text_view, traits::*, utils,
 };
@@ -33,6 +34,8 @@ pub struct StoryView {
     vote_sender: mpsc::Sender<VoteUpdate>,
     vote_receiver: mpsc::Receiver<VoteUpdate>,
     cb_sink: CbSink,
+
+    find_state: FindStateRef,
 }
 
 impl ViewWrapper for StoryView {
@@ -40,6 +43,7 @@ impl ViewWrapper for StoryView {
 
     fn wrap_layout(&mut self, size: Vec2) {
         self.try_update_vote_state();
+        self.process_find_signal();
         self.view.layout(size);
     }
 }
@@ -50,6 +54,7 @@ impl StoryView {
         starting_id: usize,
         cb_sink: CbSink,
         initial_vote_state: HashMap<u32, VoteData>,
+        find_state: FindStateRef,
     ) -> Self {
         let max_id_len = Self::compute_max_id_len(stories.len(), starting_id);
         let view =
@@ -65,6 +70,7 @@ impl StoryView {
             vote_sender,
             vote_receiver,
             cb_sink,
+            find_state,
         }
     }
 
@@ -270,22 +276,115 @@ impl StoryView {
     }
 
     fn refresh_story_row(&mut self, id: usize) {
+        let text = self.story_row_text(id);
+        self.set_story_row_content(id, text);
+    }
+
+    /// Build the rendered `StyledString` for the `id`-th story row,
+    /// incorporating the numeric prefix and any vote-arrow icon.
+    fn story_row_text(&self, id: usize) -> StyledString {
         let max_id_len = self.max_id_len;
         let starting_id = self.starting_id;
-        let story = self.stories[id].clone();
-        let vote = self.vote_state.get(&story.id).cloned();
+        let story = &self.stories[id];
+        let vote = self.vote_state.get(&story.id);
 
         let mut text = StyledString::styled(
             format!("{1:>0$}. ", max_id_len, starting_id + id + 1),
             config::get_config_theme().component_style.metadata,
         );
-        text.append(Self::get_story_text(max_id_len, &story, vote.as_ref()));
+        text.append(Self::get_story_text(max_id_len, story, vote));
+        text
+    }
 
+    /// Replace the rendered content of the `id`-th row's inner `TextView`.
+    fn set_story_row_content(&mut self, id: usize, text: StyledString) {
         let linear = self.get_inner_list_mut();
         if let Some(child) = linear.get_child_mut(id) {
             if let Some(tv) = child.downcast_mut::<text_view::TextView>() {
                 tv.set_content(text);
             }
+        }
+    }
+
+    /// Poll the shared find state and apply any pending signal.
+    fn process_find_signal(&mut self) {
+        let signal = self.find_state.borrow_mut().pending.take();
+        match signal {
+            Some(FindSignal::Update) => {
+                let query = self.find_state.borrow().query.clone();
+                self.apply_find_query(&query);
+            }
+            Some(FindSignal::Clear) => {
+                self.clear_find_highlights();
+                let mut state = self.find_state.borrow_mut();
+                state.query.clear();
+                state.match_ids.clear();
+            }
+            Some(FindSignal::JumpNext) => self.jump_to_next_match(),
+            Some(FindSignal::JumpPrev) => self.jump_to_prev_match(),
+            None => {}
+        }
+    }
+
+    fn apply_find_query(&mut self, query: &str) {
+        let style: Style = config::get_config_theme()
+            .component_style
+            .matched_highlight
+            .into();
+        let mut matches = Vec::new();
+        for id in 0..self.stories.len() {
+            let base = self.story_row_text(id);
+            let (new_text, count) = find_bar::highlight_matches(&base, query, style);
+            if count > 0 {
+                matches.push(id);
+            }
+            self.set_story_row_content(id, new_text);
+        }
+        self.find_state.borrow_mut().match_ids = matches;
+    }
+
+    fn clear_find_highlights(&mut self) {
+        for id in 0..self.stories.len() {
+            self.refresh_story_row(id);
+        }
+    }
+
+    fn jump_to_next_match(&mut self) {
+        let current = self.get_focus_index();
+        let target = {
+            let state = self.find_state.borrow();
+            if state.match_ids.is_empty() {
+                return;
+            }
+            state
+                .match_ids
+                .iter()
+                .find(|&&i| i >= current)
+                .copied()
+                .or_else(|| state.match_ids.first().copied())
+        };
+        if let Some(target) = target {
+            self.set_focus_index(target);
+        }
+    }
+
+    fn jump_to_prev_match(&mut self) {
+        let current = self.get_focus_index();
+        let target = {
+            let state = self.find_state.borrow();
+            if state.match_ids.is_empty() {
+                return;
+            }
+            state
+                .match_ids
+                .iter()
+                .rev()
+                .find(|&&i| i < current)
+                .copied()
+                .or_else(|| state.match_ids.last().copied())
+        };
+        if let Some(target) = target {
+            self.set_focus_index(target);
         }
     }
 }
@@ -325,6 +424,7 @@ pub fn construct_story_main_view(
     starting_id: usize,
     cb_sink: CbSink,
     initial_vote_state: HashMap<u32, VoteData>,
+    find_state: FindStateRef,
 ) -> OnEventView<StoryView> {
     let is_suffix_key =
         |c: &Event| -> bool { config::get_story_view_keymap().goto_story.has_event(c) };
@@ -332,11 +432,14 @@ pub fn construct_story_main_view(
     let story_view_keymap = config::get_story_view_keymap().clone();
     let scroll_keymap = config::get_scroll_keymap().clone();
 
+    let find_state_for_key = find_state.clone();
+
     OnEventView::new(StoryView::new(
         stories,
         starting_id,
         cb_sink,
         initial_vote_state,
+        find_state,
     ))
     // number parsing
     .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
@@ -448,6 +551,17 @@ pub fn construct_story_main_view(
             Err(_) => None,
         }
     })
+    // Open the find-on-page dialog. Stale highlights from a previous
+    // session are cleared before opening so the view doesn't briefly
+    // show last-search highlights with an empty new query.
+    .on_pre_event(story_view_keymap.find_in_view.clone(), move |s| {
+        {
+            let mut state = find_state_for_key.borrow_mut();
+            state.query.clear();
+            state.pending = Some(FindSignal::Clear);
+        }
+        s.add_layer(find_bar::construct_find_dialog(find_state_for_key.clone()));
+    })
     // vim-style half-page cursor movement
     .on_pre_event_inner(scroll_keymap.page_down, |s, _| s.move_focus_half_page(true))
     .on_pre_event_inner(scroll_keymap.page_up, |s, _| s.move_focus_half_page(false))
@@ -513,9 +627,18 @@ pub fn construct_story_view(
     cb_sink: CbSink,
 ) -> impl View {
     let starting_id = client::STORY_LIMIT * page;
-    let main_view =
-        construct_story_main_view(stories, client, starting_id, cb_sink, initial_vote_state)
-            .full_height();
+    let find_state = find_bar::FindState::new_ref();
+    let find_state_for_next = find_state.clone();
+    let find_state_for_prev = find_state.clone();
+    let main_view = construct_story_main_view(
+        stories,
+        client,
+        starting_id,
+        cb_sink,
+        initial_vote_state,
+        find_state,
+    )
+    .full_height();
 
     let mut view = LinearLayout::vertical()
         .child(get_story_view_title_bar(tag, sort_mode))
@@ -538,6 +661,26 @@ pub fn construct_story_view(
     OnEventView::new(view)
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(StoryView::construct_on_event_help_view())
+        })
+        // Context-dependent match navigation: when a find session is
+        // active, `n`/`N` jump between matches; otherwise they fall
+        // through to the paging handlers below. Registered first so the
+        // paging handlers only see the event when find is inactive.
+        .on_pre_event_inner(story_view_keymap.find_next_match.clone(), move |_, _| {
+            let mut state = find_state_for_next.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpNext);
+            Some(EventResult::Consumed(None))
+        })
+        .on_pre_event_inner(story_view_keymap.find_prev_match.clone(), move |_, _| {
+            let mut state = find_state_for_prev.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpPrev);
+            Some(EventResult::Consumed(None))
         })
         .on_pre_event(story_view_keymap.cycle_sort_mode, move |s| {
             // disable "search_by_date" for front_page stories

@@ -14,7 +14,6 @@ pub struct CommentView {
     raw_command: String,
 
     find_state: FindStateRef,
-    find_matches: Vec<usize>,
 }
 
 pub enum NavigationDirection {
@@ -50,7 +49,6 @@ impl CommentView {
             raw_command: String::new(),
             data,
             find_state,
-            find_matches: Vec::new(),
         };
 
         view.try_update_comments();
@@ -69,19 +67,23 @@ impl CommentView {
             }
             Some(FindSignal::Clear) => {
                 self.clear_find_highlights();
-                self.find_matches.clear();
-                self.find_state.borrow_mut().query.clear();
+                let mut state = self.find_state.borrow_mut();
+                state.query.clear();
+                state.match_ids.clear();
             }
             Some(FindSignal::JumpNext) => {
                 self.jump_to_next_match();
+            }
+            Some(FindSignal::JumpPrev) => {
+                self.jump_to_prev_match();
             }
             None => {}
         }
     }
 
-    /// Re-highlight every item with the new `query` and update the
-    /// tracked `find_matches` list. Restores original text when
-    /// `query` is empty or has zero matches.
+    /// Re-highlight every item with the new `query` and publish the
+    /// matched indices on the shared state. Non-matching items are still
+    /// re-rendered from their base text so stale highlights clear.
     fn apply_find_query(&mut self, query: &str) {
         let style: Style = config::get_config_theme()
             .component_style
@@ -99,7 +101,7 @@ impl CommentView {
                 .get_inner_mut()
                 .set_content(new_text);
         }
-        self.find_matches = matches;
+        self.find_state.borrow_mut().match_ids = matches;
     }
 
     /// Restore each item's canonical text from its state-based renderer.
@@ -112,16 +114,41 @@ impl CommentView {
     /// Move focus to the next matched item at or after the current focus.
     /// Wraps to the first match when none follow the current focus.
     fn jump_to_next_match(&mut self) {
-        if self.find_matches.is_empty() {
-            return;
-        }
         let current = self.get_focus_index();
-        let target = self
-            .find_matches
-            .iter()
-            .find(|&&i| i >= current)
-            .copied()
-            .or_else(|| self.find_matches.first().copied());
+        let target = {
+            let state = self.find_state.borrow();
+            if state.match_ids.is_empty() {
+                return;
+            }
+            state
+                .match_ids
+                .iter()
+                .find(|&&i| i >= current)
+                .copied()
+                .or_else(|| state.match_ids.first().copied())
+        };
+        if let Some(target) = target {
+            self.set_focus_index(target);
+        }
+    }
+
+    /// Move focus to the previous matched item strictly before the
+    /// current focus. Wraps to the last match when none precede.
+    fn jump_to_prev_match(&mut self) {
+        let current = self.get_focus_index();
+        let target = {
+            let state = self.find_state.borrow();
+            if state.match_ids.is_empty() {
+                return;
+            }
+            state
+                .match_ids
+                .iter()
+                .rev()
+                .find(|&&i| i < current)
+                .copied()
+                .or_else(|| state.match_ids.last().copied())
+        };
         if let Some(target) = target {
             self.set_focus_index(target);
         }
@@ -427,6 +454,8 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
 
     let find_state = find_bar::FindState::new_ref();
     let find_state_for_key = find_state.clone();
+    let find_state_for_next = find_state.clone();
+    let find_state_for_prev = find_state.clone();
 
     OnEventView::new(CommentView::new(data, find_state))
         .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
@@ -515,6 +544,25 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
             let next_id =
                 s.find_item_id_by_max_level(id, s.items[id].level, NavigationDirection::Previous);
             s.set_focus_index(next_id)
+        })
+        // Context-dependent match navigation: `n`/`N` jump between find
+        // matches when a session is active, otherwise fall through to the
+        // existing next/prev_top_level_comment bindings below.
+        .on_pre_event_inner(comment_view_keymap.find_next_match.clone(), move |_, _| {
+            let mut state = find_state_for_next.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpNext);
+            Some(EventResult::Consumed(None))
+        })
+        .on_pre_event_inner(comment_view_keymap.find_prev_match.clone(), move |_, _| {
+            let mut state = find_state_for_prev.borrow_mut();
+            if state.match_ids.is_empty() {
+                return None;
+            }
+            state.pending = Some(FindSignal::JumpPrev);
+            Some(EventResult::Consumed(None))
         })
         .on_pre_event_inner(comment_view_keymap.next_top_level_comment, move |s, _| {
             let id = s.get_focus_index();

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use super::{help_view::*, story_view, text_view::EditableTextView, utils};
+use super::{find_bar, help_view::*, story_view, text_view::EditableTextView, utils};
 use crate::prelude::*;
 
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -50,13 +50,16 @@ impl SearchView {
                 // Search results come from Algolia with arbitrary query +
                 // sort, so no single HN listing page matches. Pass an empty
                 // vote map; the story view falls back to lazy per-item
-                // fetches on first vote.
+                // fetches on first vote. The find state is unused inside
+                // the search view (there's no find keybinding wired) but
+                // the story view still needs to own one.
                 story_view::construct_story_main_view(
                     vec![],
                     client,
                     0,
                     cb_sink.clone(),
                     HashMap::new(),
+                    find_bar::FindState::new_ref(),
                 )
                 .full_height(),
             );
@@ -152,6 +155,7 @@ impl SearchView {
                 starting_id,
                 self.cb_sink.clone(),
                 HashMap::new(),
+                find_bar::FindState::new_ref(),
             )
             .full_height(),
         );

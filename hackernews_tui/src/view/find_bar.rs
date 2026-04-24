@@ -7,10 +7,13 @@ use crate::prelude::*;
 /// Shared find-on-page state. A view that supports find-on-page owns a
 /// `FindStateRef` and passes a clone to `construct_find_dialog`. The
 /// dialog mutates the state on keystrokes; the owning view polls the
-/// `pending` signal on each layout pass.
+/// `pending` signal on each layout pass. Tracked `match_ids` live on
+/// the state so outer-layer keymaps (e.g. a story view's paging
+/// wrapper) can check "is find active" without reaching into the view.
 pub struct FindState {
     pub query: String,
     pub pending: Option<FindSignal>,
+    pub match_ids: Vec<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +24,8 @@ pub enum FindSignal {
     Clear,
     /// Jump focus to the next match at or after the current focus.
     JumpNext,
+    /// Jump focus to the previous match at or before the current focus.
+    JumpPrev,
 }
 
 pub type FindStateRef = Rc<RefCell<FindState>>;
@@ -30,6 +35,7 @@ impl FindState {
         Rc::new(RefCell::new(FindState {
             query: String::new(),
             pending: None,
+            match_ids: Vec::new(),
         }))
     }
 }

@@ -366,6 +366,18 @@ impl HasHelpView for story_view::StoryView {
                             story_view_keymap.reply.to_string(),
                             "Reply to the focused story in $EDITOR (requires authentication)",
                         ),
+                        Command::new(
+                            story_view_keymap.find_in_view.to_string(),
+                            "Find on page: highlight stories matching a query (enter jumps to next, esc clears)",
+                        ),
+                        Command::new(
+                            story_view_keymap.find_next_match.to_string(),
+                            "Jump to next find match (when a find session is active)",
+                        ),
+                        Command::new(
+                            story_view_keymap.find_prev_match.to_string(),
+                            "Jump to previous find match (when a find session is active)",
+                        ),
                     ],
                     default_other_commands(),
                 ]
@@ -458,6 +470,14 @@ impl HasHelpView for comment_view::CommentView {
                         Command::new(
                             comment_view_keymap.find_in_view.to_string(),
                             "Find on page: highlight comments matching a query (enter jumps to next, esc clears)",
+                        ),
+                        Command::new(
+                            comment_view_keymap.find_next_match.to_string(),
+                            "Jump to next find match (when a find session is active)",
+                        ),
+                        Command::new(
+                            comment_view_keymap.find_prev_match.to_string(),
+                            "Jump to previous find match (when a find session is active)",
                         ),
                         Command::new(
                             comment_view_keymap.upvote.to_string(),
@@ -616,7 +636,17 @@ impl HasHelpView for article_view::ArticleView {
                 ],
             ),
             CommandGroup::new("View navigation", default_view_navigation_commands()),
-            CommandGroup::new("Others", default_other_commands()),
+            CommandGroup::new(
+                "Others",
+                [
+                    vec![Command::new(
+                        article_view_keymap.find_in_view.to_string(),
+                        "Find on page: highlight matches in the article (esc clears)",
+                    )],
+                    default_other_commands(),
+                ]
+                .concat(),
+            ),
         ])
     }
 }

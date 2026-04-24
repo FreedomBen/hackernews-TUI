@@ -1,3 +1,4 @@
+use super::find_bar::{self, FindSignal, FindStateRef};
 use super::{async_view, help_view::HasHelpView, link_dialog, traits::*, utils};
 use crate::prelude::*;
 
@@ -10,6 +11,12 @@ pub struct ArticleView {
     view: ScrollView<LinearLayout>,
 
     raw_command: String,
+
+    find_state: FindStateRef,
+    /// The un-highlighted content as produced by the last re-parse.
+    /// `apply_find_query` layers highlights on top of this; `clear`
+    /// restores the displayed text back to it.
+    base_content: Option<StyledString>,
 }
 
 impl ViewWrapper for ArticleView {
@@ -24,8 +31,15 @@ impl ViewWrapper for ArticleView {
 
             match self.article.parse(self.width.saturating_sub(5)) {
                 Ok(result) => {
+                    self.base_content = Some(result.content.clone());
                     self.set_article_content(result.content);
                     self.links = result.links;
+                    // A fresh parse wipes any existing highlights; re-apply
+                    // them from the active query if a find session is live.
+                    let query = self.find_state.borrow().query.clone();
+                    if !query.is_empty() {
+                        self.apply_find_query(&query);
+                    }
                 }
                 Err(err) => {
                     warn!("failed to parse the article: {}", err);
@@ -33,6 +47,7 @@ impl ViewWrapper for ArticleView {
             }
         }
 
+        self.process_find_signal();
         self.with_view_mut(|v| v.layout(size));
     }
 
@@ -42,7 +57,7 @@ impl ViewWrapper for ArticleView {
 }
 
 impl ArticleView {
-    pub fn new(article: Article) -> Self {
+    pub fn new(article: Article, find_state: FindStateRef) -> Self {
         let component_style = &config::get_config_theme().component_style;
         let unknown = "[unknown]".to_string();
         let desc = format!(
@@ -68,6 +83,9 @@ impl ArticleView {
 
             view,
             raw_command: "".to_string(),
+
+            find_state,
+            base_content: None,
         }
     }
 
@@ -81,6 +99,48 @@ impl ArticleView {
             .expect("The 3rd child of the article view should be a padded text view")
             .get_inner_mut()
             .set_content(new_content)
+    }
+
+    /// Poll the shared find state and apply any pending signal. The
+    /// article view only supports highlighting; jump-to-match is a
+    /// follow-up (scrolling a single large `TextView` to a byte offset
+    /// needs row-offset plumbing that doesn't exist yet).
+    fn process_find_signal(&mut self) {
+        let signal = self.find_state.borrow_mut().pending.take();
+        match signal {
+            Some(FindSignal::Update) => {
+                let query = self.find_state.borrow().query.clone();
+                self.apply_find_query(&query);
+            }
+            Some(FindSignal::Clear) => {
+                self.clear_find_highlights();
+                let mut state = self.find_state.borrow_mut();
+                state.query.clear();
+                state.match_ids.clear();
+            }
+            Some(FindSignal::JumpNext) | Some(FindSignal::JumpPrev) => {
+                // no-op: jump requires row-offset scrolling, not yet wired
+            }
+            None => {}
+        }
+    }
+
+    fn apply_find_query(&mut self, query: &str) {
+        let Some(base) = self.base_content.clone() else {
+            return;
+        };
+        let style: Style = config::get_config_theme()
+            .component_style
+            .matched_highlight
+            .into();
+        let (highlighted, _count) = find_bar::highlight_matches(&base, query, style);
+        self.set_article_content(highlighted);
+    }
+
+    fn clear_find_highlights(&mut self) {
+        if let Some(base) = self.base_content.clone() {
+            self.set_article_content(base);
+        }
     }
 
     inner_getters!(self.view: ScrollView<LinearLayout>);
@@ -109,8 +169,10 @@ fn construct_article_main_view(
     };
 
     let article_view_keymap = config::get_article_view_keymap().clone();
+    let find_state = find_bar::FindState::new_ref();
+    let find_state_for_key = find_state.clone();
 
-    OnEventView::new(ArticleView::new(article))
+    OnEventView::new(ArticleView::new(article, find_state))
         .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
             match *e {
                 Event::Char(c) if c.is_ascii_digit() => {
@@ -157,6 +219,15 @@ fn construct_article_main_view(
         })
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(ArticleView::construct_on_event_help_view())
+        })
+        // Open the find-on-page dialog. Highlight-only; no match jump.
+        .on_pre_event(article_view_keymap.find_in_view.clone(), move |s| {
+            {
+                let mut state = find_state_for_key.borrow_mut();
+                state.query.clear();
+                state.pending = Some(FindSignal::Clear);
+            }
+            s.add_layer(find_bar::construct_find_dialog(find_state_for_key.clone()));
         })
         .on_scroll_events()
 }
