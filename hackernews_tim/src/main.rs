@@ -404,6 +404,7 @@ fn main() {
             user_info = Some(client::UserInfo {
                 username: auth.username.clone(),
                 karma: profile.karma,
+                showdead: profile.showdead,
             });
         }
     }

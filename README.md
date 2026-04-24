@@ -354,6 +354,16 @@ successful login ever completed), you can seed the session from a browser:
 Clear the line (`session = ""`) at any time to force a fresh login on the
 next run.
 
+### Dead comments and stories
+
+When logged in, `Hackernews-TIM` reads the `showdead` preference from your
+HN profile. If it's set to `yes`, dead comments and stories are fetched
+and rendered inline exactly as they would be in the web UI (including the
+`[dead]` marker). Flip the setting on
+<https://news.ycombinator.com/user?id=YOUR_USERNAME> and restart the TUI
+to pick up the change. Unauthenticated sessions always hide dead items,
+mirroring HN itself.
+
 ## Logging
 
 `Hackernews-TIM` uses `RUST_LOG` environment variable to define the application's [logging level](https://docs.rs/log/0.4.14/log/enum.Level.html) (default to be `INFO`).

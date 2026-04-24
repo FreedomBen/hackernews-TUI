@@ -32,19 +32,25 @@ static USER_INFO: once_cell::sync::OnceCell<Option<UserInfo>> = once_cell::sync:
 ///
 /// `karma` is optional because the profile fetch is best-effort: a network
 /// failure or a surprise HTML change shouldn't block startup, so we just
-/// render the username on its own in that case.
+/// render the username on its own in that case. `showdead` mirrors the
+/// HN profile preference; when true, page/listing fetches pass
+/// `showdead=yes` so HN includes dead comments and stories.
 #[derive(Debug, Clone)]
 pub struct UserInfo {
     pub username: String,
     pub karma: Option<u32>,
+    pub showdead: bool,
 }
 
-/// Parsed fields from a HN user profile page. Both are optional so the parser
-/// can return a useful result even when HN tweaks its markup.
+/// Parsed fields from a HN user profile page. The optionals are optional so
+/// the parser can return a useful result even when HN tweaks its markup.
+/// `showdead` defaults to `false` when the preference can't be parsed — HN
+/// itself defaults new accounts to `no`.
 #[derive(Debug, Default, Clone)]
 pub struct ProfileInfo {
     pub topcolor: Option<String>,
     pub karma: Option<u32>,
+    pub showdead: bool,
 }
 
 /// Outcome of the password-login attempt made at startup when no valid
@@ -596,11 +602,11 @@ impl HNClient {
     pub fn get_page_content(&self, item_id: u32) -> Result<String> {
         let morelink_rg = regex::Regex::new("<a.*?href='(?P<link>.*?)'.*class='morelink'.*?>")?;
 
-        let mut content = self
-            .client
-            .get(&format!("{HN_HOST_URL}/item?id={item_id}"))
-            .call()?
-            .into_string()?;
+        let url = format!(
+            "{HN_HOST_URL}/item?id={item_id}{}",
+            showdead_query_suffix("&")
+        );
+        let mut content = self.client.get(&url).call()?.into_string()?;
 
         // A Hacker News item can have multiple pages, so
         // we need to make additional requests for each page and concatenate all the responses.
@@ -658,7 +664,11 @@ impl HNClient {
         let Some(path) = listing_path_for_tag(tag) else {
             return Ok(HashMap::new());
         };
-        let url = format!("{HN_HOST_URL}/{path}?p={}", page + 1);
+        let url = format!(
+            "{HN_HOST_URL}/{path}?p={}{}",
+            page + 1,
+            showdead_query_suffix("&")
+        );
         let content = log!(
             self.client.get(&url).call()?.into_string()?,
             format!("fetch listing vote state (tag={tag}, page={page}) using {url}")
@@ -829,6 +839,7 @@ impl HNClient {
         ProfileInfo {
             topcolor: parse_topcolor_from_profile(&body),
             karma: parse_karma_from_profile(&body),
+            showdead: parse_showdead_from_profile(&body),
         }
     }
 }
@@ -867,6 +878,23 @@ fn classify_login_response(body: &str) -> Result<()> {
     Err(anyhow::anyhow!(
         "login failed: unexpected response from Hacker News"
     ))
+}
+
+/// Build the `showdead=yes` query-string fragment to append to an HN URL,
+/// or an empty string when the logged-in user has left the preference off
+/// (or when there's no logged-in user at all). `sep` is the character that
+/// prefixes the fragment — pass `"?"` for URLs that don't already carry a
+/// query string, `"&"` otherwise.
+///
+/// HN ignores `showdead=yes` on unauthenticated requests, so it's safe to
+/// append unconditionally, but we still gate on the profile preference so
+/// opting out in HN's settings propagates to this TUI as well.
+fn showdead_query_suffix(sep: &str) -> String {
+    if get_user_info().map(|u| u.showdead).unwrap_or(false) {
+        format!("{sep}showdead=yes")
+    } else {
+        String::new()
+    }
 }
 
 /// Map an internal story-view tag to the HN listing path that shows the same
@@ -1183,6 +1211,38 @@ fn parse_topcolor_from_profile(html: &str) -> Option<String> {
     Some(cap.get(1)?.as_str().to_ascii_lowercase())
 }
 
+/// Read the `showdead` preference from the logged-in user's profile page.
+///
+/// HN renders the control as a `<select name="showd">` with two `<option>`
+/// elements whose inner text is `yes` or `no`; the currently-saved value is
+/// marked with a `selected` attribute. We anchor on the short input name
+/// (`showd`) to isolate the right `<select>`, then scan its options for the
+/// one carrying `selected`. Absence of the field — which happens when we
+/// end up on someone else's profile, or when HN tweaks its markup — falls
+/// back to `false` since that matches HN's default for new accounts.
+fn parse_showdead_from_profile(html: &str) -> bool {
+    let select_rg =
+        match regex::Regex::new(r#"(?is)<select\b[^>]*\bname=["']?showd["']?[^>]*>(.*?)</select>"#)
+        {
+            Ok(rg) => rg,
+            Err(_) => return false,
+        };
+    let Some(body) = select_rg.captures(html).and_then(|c| c.get(1)) else {
+        return false;
+    };
+    let option_rg = match regex::Regex::new(
+        r#"(?is)<option\b[^>]*\bselected\b[^>]*>\s*([A-Za-z]+)\s*</option>"#,
+    ) {
+        Ok(rg) => rg,
+        Err(_) => return false,
+    };
+    option_rg
+        .captures(body.as_str())
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
 /// Record the logged-in user's display info for views to read later.
 ///
 /// Must be called at most once during startup, after the login attempt has
@@ -1232,8 +1292,8 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<Option<Strin
 mod tests {
     use super::{
         classify_login_response, listing_path_for_tag, parse_comments_from_content,
-        parse_karma_from_profile, parse_reply_form, parse_topcolor_from_profile,
-        parse_vote_data_from_content, StartupLoginStatus,
+        parse_karma_from_profile, parse_reply_form, parse_showdead_from_profile,
+        parse_topcolor_from_profile, parse_vote_data_from_content, StartupLoginStatus,
     };
     use crate::model::VoteDirection;
 
@@ -1412,6 +1472,77 @@ mod tests {
     fn returns_none_when_karma_missing() {
         let html = r#"<tr><td>user:</td><td>pg</td></tr>"#;
         assert_eq!(parse_karma_from_profile(html), None);
+    }
+
+    #[test]
+    fn parses_showdead_yes_when_selected() {
+        // Verbatim shape of the HN profile edit form when the user has the
+        // preference switched on — note the short `name="showd"` and the
+        // `selected` flag on the `yes` option.
+        let html = r#"<tr><td>showdead:</td><td>    <select name="showd">
+      <option>no</option>
+      <option selected="selected">yes</option>
+    </select>
+  </td></tr>"#;
+        assert!(parse_showdead_from_profile(html));
+    }
+
+    #[test]
+    fn parses_showdead_no_when_selected() {
+        let html = r#"<tr><td>showdead:</td><td><select name="showd">
+      <option selected="selected">no</option>
+      <option>yes</option>
+    </select></td></tr>"#;
+        assert!(!parse_showdead_from_profile(html));
+    }
+
+    #[test]
+    fn parses_showdead_with_bare_selected_attribute() {
+        // Some HN pages render `selected` without a value.
+        let html = r#"<select name=showd>
+      <option>no</option>
+      <option selected>yes</option>
+    </select>"#;
+        assert!(parse_showdead_from_profile(html));
+    }
+
+    #[test]
+    fn showdead_defaults_false_when_select_missing() {
+        // Someone else's profile (no edit form) or an HTML-shape drift both
+        // land here. `false` matches HN's default for new accounts.
+        let html = r#"<tr><td>user:</td><td>pg</td></tr>"#;
+        assert!(!parse_showdead_from_profile(html));
+    }
+
+    #[test]
+    fn showdead_defaults_false_when_no_option_selected() {
+        let html = r#"<select name="showd"><option>no</option><option>yes</option></select>"#;
+        assert!(!parse_showdead_from_profile(html));
+    }
+
+    #[test]
+    fn parses_dead_comment_row_with_visible_author_and_text() {
+        // With `?showdead=yes` passed, HN keeps the dead comment's author
+        // link and `commtext` div but swaps its text-color class to the
+        // greyed `c00`. The existing parser should pick the row up so it
+        // renders in the tree.
+        let html = concat!(
+            r#"<tr class="athing comtr" id="99">"#,
+            r#"<td><table><tr>"#,
+            r#"<td class="ind" indent="0"></td>"#,
+            r#"<td class="default"><div><span class="comhead">"#,
+            r#"<a href="user?id=deaduser" class="hnuser">deaduser</a>"#,
+            r#"<span class="age" title="2025-01-01T00:00:00 1735689600">on Jan 1, 2025</span>"#,
+            r#"</span></div>"#,
+            r#"<div class="commtext c00">[dead] this was flagged</div>"#,
+            r#"</td></tr></table></td>"#,
+            r#"</tr>"#,
+        );
+        let comments = parse_comments_from_content(html);
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].id, 99);
+        assert_eq!(comments[0].author, "deaduser");
+        assert!(comments[0].content.contains("[dead]"));
     }
 
     #[test]
