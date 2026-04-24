@@ -240,6 +240,18 @@ mod tests {
     }
 
     #[test]
+    fn embedded_configs_declare_faded_component_style() {
+        assert!(
+            LIGHT_CONFIG.contains("faded = "),
+            "light config should declare a `faded` component style entry"
+        );
+        assert!(
+            DARK_CONFIG.contains("faded = "),
+            "dark config should declare a `faded` component style entry"
+        );
+    }
+
+    #[test]
     fn write_default_config_creates_parent_dirs() {
         let tmp =
             std::env::temp_dir().join(format!("hackernews_tim_init_test_{}", std::process::id()));

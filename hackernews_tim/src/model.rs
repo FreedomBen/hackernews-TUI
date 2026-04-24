@@ -166,6 +166,7 @@ impl From<Story> for HnItem {
     fn from(story: Story) -> Self {
         let component_style = &config::get_config_theme().component_style;
         let me = client::get_user_info().map(|u| u.username.as_str());
+        let is_faded = story.flagged || story.dead;
 
         let metadata = utils::combine_styled_strings([
             status_prefix(story.flagged, story.dead, component_style.metadata),
@@ -184,8 +185,14 @@ impl From<Story> for HnItem {
             ),
         ]);
 
-        // parse story's HTML content
-        let result = parse_hn_html_text(story.content, Style::default(), 0);
+        // parse story's HTML content; fade the body when HN has marked
+        // the story dead/flagged so it mirrors the site's gray rendering.
+        let body_style: Style = if is_faded {
+            component_style.faded.into()
+        } else {
+            Style::default()
+        };
+        let result = parse_hn_html_text(story.content, body_style, 0);
 
         // construct a minimized text representing the collapsed story's content
         let minimized_text = if result.content.source().is_empty() {
@@ -214,11 +221,21 @@ impl From<Comment> for HnItem {
         let component_style = &config::get_config_theme().component_style;
         let me = client::get_user_info().map(|u| u.username.as_str());
         let author = comment.author.clone();
+        let is_faded = comment.flagged || comment.dead;
+
+        // When HN has grayed out the comment, render the username in the
+        // same faded style rather than bold, so the whole comment reads as
+        // de-emphasized the way it does on news.ycombinator.com.
+        let username_style = if is_faded {
+            component_style.faded
+        } else {
+            component_style.username
+        };
 
         let metadata = utils::combine_styled_strings([
             status_prefix(comment.flagged, comment.dead, component_style.metadata),
             own_item_prefix(&comment.author, me, component_style.own_item_indicator),
-            StyledString::styled(comment.author, component_style.username),
+            StyledString::styled(comment.author, username_style),
             StyledString::styled(
                 format!(" {} ago ", utils::get_elapsed_time_as_text(comment.time)),
                 component_style.metadata,
@@ -234,8 +251,14 @@ impl From<Comment> for HnItem {
             ),
         ]);
 
-        // parse the comment's content
-        let result = parse_hn_html_text(comment.content, Style::default(), 0);
+        // parse the comment's content; fade the body when HN has marked
+        // the comment dead/flagged so it mirrors the site's gray rendering.
+        let body_style: Style = if is_faded {
+            component_style.faded.into()
+        } else {
+            Style::default()
+        };
+        let result = parse_hn_html_text(comment.content, body_style, 0);
 
         let text =
             utils::combine_styled_strings([metadata, StyledString::plain("\n"), result.content]);

@@ -116,6 +116,11 @@ pub struct ComponentStyle {
     pub italic: Style,
     pub bold: Style,
     pub metadata: Style,
+    /// Style applied to the body (and comment byline) of items HN has
+    /// flagged as dead or flagged. Mirrors HN's gray rendering; kept as
+    /// a separate knob so users can tune the de-emphasis independently
+    /// of `metadata`.
+    pub faded: Style,
     pub current_story_tag: Style,
     pub username: Style,
     pub own_item_indicator: Style,
@@ -184,6 +189,7 @@ impl Default for ComponentStyle {
             italic: Style::default().effect(Effect::Italic),
             bold: Style::default().effect(Effect::Bold),
             metadata: Style::default().front(Color::parse("#828282")),
+            faded: Style::default().front(Color::parse("#828282")),
             username: Style::default().effect(Effect::Bold),
             own_item_indicator: Style::default()
                 .front(Color::parse(&format!("#{HN_DEFAULT_TOPCOLOR_HEX}")))
@@ -374,4 +380,18 @@ impl From<Effect> for cursive::theme::Effect {
 
 pub fn get_config_theme() -> &'static Theme {
     &super::get_config().theme
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_component_style_declares_faded_foreground() {
+        let cs = ComponentStyle::default();
+        assert!(
+            cs.faded.front.is_some(),
+            "faded component style should declare a foreground color by default"
+        );
+    }
 }
