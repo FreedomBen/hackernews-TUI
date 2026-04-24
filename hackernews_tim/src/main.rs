@@ -8,6 +8,7 @@ pub mod reply_editor;
 pub mod utils;
 pub mod view;
 
+const APP_CONFIG_SUBDIR: &str = "hackernews-tim";
 const DEFAULT_CONFIG_FILE: &str = "hn-tui.toml";
 const DEFAULT_AUTH_FILE: &str = "hn-auth.toml";
 const DEFAULT_LOG_FILE: &str = "hn-tui.log";
@@ -126,18 +127,28 @@ fn parse_args(config_dir: std::path::PathBuf, cache_dir: std::path::PathBuf) -> 
         .get_matches()
 }
 
-fn init_app_dirs() -> (std::path::PathBuf, std::path::PathBuf) {
-    let mut config_dir = dirs_next::config_dir().expect("failed to get user's config dir");
+fn init_app_dirs() -> (
+    std::path::PathBuf,
+    std::path::PathBuf,
+    Vec<std::path::PathBuf>,
+) {
+    let xdg_config_dir = dirs_next::config_dir().expect("failed to get user's config dir");
     let cache_dir = dirs_next::cache_dir().expect("failed to get user's cache dir");
     let home_dir = dirs_next::home_dir().expect("failed to get user's home dir");
 
-    // Try to find application's config file in the user's config dir.
-    // If not found, fallback to use `$HOME/.config` (for backward compability reason)
-    if !config_dir.join(DEFAULT_CONFIG_FILE).exists() {
-        config_dir = home_dir.join(".config");
+    let app_config_dir = xdg_config_dir.join(APP_CONFIG_SUBDIR);
+
+    // Directories where older versions stored `hn-tui.toml` / `hn-auth.toml`
+    // directly. Used once at startup to migrate pre-subdir configs into the
+    // new location. Deduped so Linux users without a separate
+    // `$XDG_CONFIG_HOME` don't hit the same dir twice.
+    let mut legacy_dirs = vec![xdg_config_dir];
+    let dot_config = home_dir.join(".config");
+    if !legacy_dirs.contains(&dot_config) {
+        legacy_dirs.push(dot_config);
     }
 
-    (config_dir, cache_dir)
+    (app_config_dir, cache_dir, legacy_dirs)
 }
 
 fn init_auth(auth_path: &std::path::Path) -> Option<config::Auth> {
@@ -272,8 +283,8 @@ fn build_client_and_log_in(
 }
 
 fn main() {
-    let (config_dir, cache_dir) = init_app_dirs();
-    let args = parse_args(config_dir, cache_dir);
+    let (app_config_dir, cache_dir, legacy_dirs) = init_app_dirs();
+    let args = parse_args(app_config_dir, cache_dir);
 
     init_logging(
         args.get_one::<String>("log")
@@ -284,6 +295,33 @@ fn main() {
         .get_one::<String>("config")
         .expect("`config` argument should have a default value");
     let config_path = std::path::Path::new(config_file_str);
+    let auth_file_str = args
+        .get_one::<String>("auth")
+        .expect("`auth` argument should have a default value");
+    let auth_path = std::path::PathBuf::from(auth_file_str);
+
+    // One-time migration: if the user hasn't overridden the path and the
+    // new default location is empty but a legacy file exists (from before
+    // the app moved its configs into an `APP_CONFIG_SUBDIR` subdirectory),
+    // copy the legacy file in. Skipped under `--init-config` since that
+    // flag is an explicit ask to overwrite with fresh defaults.
+    let running_init_config = args.get_one::<String>("init_config").is_some();
+    if !running_init_config {
+        if args.value_source("config") == Some(clap::parser::ValueSource::DefaultValue) {
+            let sources: Vec<std::path::PathBuf> = legacy_dirs
+                .iter()
+                .map(|d| d.join(DEFAULT_CONFIG_FILE))
+                .collect();
+            config::migrate_legacy_file(config_path, &sources);
+        }
+        if args.value_source("auth") == Some(clap::parser::ValueSource::DefaultValue) {
+            let sources: Vec<std::path::PathBuf> = legacy_dirs
+                .iter()
+                .map(|d| d.join(DEFAULT_AUTH_FILE))
+                .collect();
+            config::migrate_legacy_file(&auth_path, &sources);
+        }
+    }
 
     if let Some(theme) = args.get_one::<String>("init_config") {
         let flavor: config::ConfigFlavor = theme
@@ -339,10 +377,6 @@ fn main() {
     // user's HN `topcolor`) before sealing it into the global.
     let mut config = config::load_config_file(config_file_str);
 
-    let auth_file_str = args
-        .get_one::<String>("auth")
-        .expect("`auth` argument should have a default value");
-    let auth_path = std::path::PathBuf::from(auth_file_str);
     let auth = init_auth(&auth_path);
 
     // Build the HN client early so we can log in and (optionally) fetch the

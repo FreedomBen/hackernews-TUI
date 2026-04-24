@@ -279,12 +279,14 @@ In `Navigation` mode, the `find_in_view`, `find_next_match`, and `find_prev_matc
 
 ## Configuration
 
-By default, `Hackernews-TIM` will look for the `hn-tui.toml` user-defined config file inside
+By default, `Hackernews-TIM` will look for the `hn-tui.toml` user-defined config file inside the `hackernews-tim` subdirectory of
 
-- the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html)
-- `.config` directory inside the [user's home directory](https://docs.rs/dirs-next/latest/dirs_next/fn.home_dir.html)
+- the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html), e.g. `~/.config/hackernews-tim/hn-tui.toml` on Linux
+- the `.config` directory inside the [user's home directory](https://docs.rs/dirs-next/latest/dirs_next/fn.home_dir.html) as a fallback candidate for legacy files
 
-If no such file is found and the application is launched from an interactive terminal, it will prompt to write a default config — [`light`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) or [`dark`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml). Skip the prompt (press `s` / Enter) and the application falls back to the built-in defaults without writing anything.
+On startup, if the new-location file is missing but a legacy `hn-tui.toml` (or `hn-auth.toml`) from a pre-subdirectory release still lives directly in one of those directories, the application copies it into the new location automatically. The original file is left in place so you can remove it once you're comfortable with the migration.
+
+If no config file is found (neither in the new location nor as a legacy file) and the application is launched from an interactive terminal, it will prompt to write a default config — [`light`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) or [`dark`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml). Skip the prompt (press `s` / Enter) and the application falls back to the built-in defaults without writing anything.
 
 To bypass the prompt, use `--init-config <light|dark>` to write a default config to the resolved `--config` path and exit. Non-interactive runs (pipes, CI) with no config file also skip the prompt and use the built-in defaults.
 

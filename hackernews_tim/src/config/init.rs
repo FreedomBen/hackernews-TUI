@@ -78,6 +78,53 @@ pub fn update_theme_in_place(path: &Path, flavor: ConfigFlavor) -> anyhow::Resul
     Ok(())
 }
 
+/// One-time migration helper. If `target` doesn't exist but any of
+/// `sources` does, copy the first existing source into `target`,
+/// creating `target`'s parent directory if needed. Prints a one-line
+/// user-visible note on success so the user knows the original file is
+/// still on disk and can be removed manually.
+///
+/// Failures are logged and swallowed — the caller continues as if the
+/// migration had not happened, matching the rest of the startup flow
+/// (config parse failures, auth failures, etc. are also best-effort).
+///
+/// `std::fs::copy` preserves the source file's permission bits, so a
+/// legacy `hn-auth.toml` stays at mode `0600` after the copy.
+pub fn migrate_legacy_file(target: &Path, sources: &[std::path::PathBuf]) {
+    if target.exists() {
+        return;
+    }
+    let Some(source) = sources.iter().find(|p| p.as_path() != target && p.exists()) else {
+        return;
+    };
+    if let Some(parent) = target.parent() {
+        if !parent.as_os_str().is_empty() {
+            if let Err(err) = std::fs::create_dir_all(parent) {
+                tracing::warn!(
+                    "Failed to create {} while migrating {}: {err}",
+                    parent.display(),
+                    source.display()
+                );
+                return;
+            }
+        }
+    }
+    match std::fs::copy(source, target) {
+        Ok(_) => {
+            eprintln!(
+                "Copied legacy {} to {} (original kept).",
+                source.display(),
+                target.display(),
+            );
+        }
+        Err(err) => tracing::warn!(
+            "Failed to copy {} to {}: {err}",
+            source.display(),
+            target.display()
+        ),
+    }
+}
+
 /// Outcome of [`prompt_for_auth`].
 pub enum AuthPromptResult {
     /// The user declined to log in. No file should be written.
@@ -264,6 +311,88 @@ quit = "Q"
         assert!(updated.contains(r##"quit = "Q""##));
 
         std::fs::remove_file(&path).ok();
+    }
+
+    fn migration_tmp(suffix: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "hackernews_tim_migrate_test_{}_{suffix}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn migrate_legacy_file_noops_when_target_exists() {
+        let tmp = migration_tmp("target_exists");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let target = tmp.join("hn-tui.toml");
+        std::fs::write(&target, "target content").unwrap();
+
+        let legacy_dir = tmp.join("legacy");
+        std::fs::create_dir_all(&legacy_dir).unwrap();
+        let source = legacy_dir.join("hn-tui.toml");
+        std::fs::write(&source, "legacy content").unwrap();
+
+        migrate_legacy_file(&target, &[source]);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "target content");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_legacy_file_copies_when_target_missing() {
+        let tmp = migration_tmp("copies");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let target = tmp.join("subdir").join("hn-tui.toml");
+        let source = tmp.join("hn-tui.toml");
+        std::fs::write(&source, "legacy content").unwrap();
+
+        assert!(
+            !target.exists(),
+            "precondition: target should not exist yet"
+        );
+        migrate_legacy_file(&target, std::slice::from_ref(&source));
+
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "legacy content");
+        assert!(source.exists(), "source should still exist after copy");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_legacy_file_uses_first_existing_source() {
+        let tmp = migration_tmp("first_existing");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let target = tmp.join("subdir").join("hn-tui.toml");
+        let missing = tmp.join("a").join("hn-tui.toml");
+        let present = tmp.join("b").join("hn-tui.toml");
+        std::fs::create_dir_all(present.parent().unwrap()).unwrap();
+        std::fs::write(&present, "from second").unwrap();
+
+        migrate_legacy_file(&target, &[missing, present]);
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "from second");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn migrate_legacy_file_noops_when_no_source_exists() {
+        let tmp = migration_tmp("no_source");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let target = tmp.join("subdir").join("hn-tui.toml");
+        let missing = tmp.join("nonexistent.toml");
+
+        migrate_legacy_file(&target, &[missing]);
+        assert!(!target.exists());
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]

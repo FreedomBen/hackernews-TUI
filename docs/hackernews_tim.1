@@ -26,17 +26,19 @@ skipped so non-interactive invocations do not hang.
 .TP
 .BI \-c\ FILE ",\ \-\-config\ " FILE
 Path to the application's configuration file. Defaults to
+.IR $XDG_CONFIG_HOME/hackernews-tim/hn-tui.toml .
+On startup, if that file is missing but a legacy
 .I $XDG_CONFIG_HOME/hn-tui.toml
 (or
-.IR $HOME/.config/hn-tui.toml
-as a fallback).
+.IR $HOME/.config/hn-tui.toml )
+exists, it is copied into the new location and the original is preserved.
 .TP
 .BI \-a\ FILE ",\ \-\-auth\ " FILE
 Path to the authentication file containing the Hacker News username and
 password. Defaults to
-.I $XDG_CONFIG_HOME/hn-auth.toml
-(with the same fallback as
-.BR \-\-config ).
+.IR $XDG_CONFIG_HOME/hackernews-tim/hn-auth.toml ,
+with the same legacy-file migration as
+.BR \-\-config .
 .TP
 .BI \-l\ FOLDER ",\ \-\-log\ " FOLDER
 Folder in which to write the log file
@@ -160,14 +162,25 @@ When the cached session expires the app falls back to the stored
 password and refreshes the cookie.
 .SH FILES
 .TP
-.I $XDG_CONFIG_HOME/hn-tui.toml
+.I $XDG_CONFIG_HOME/hackernews-tim/hn-tui.toml
 Default configuration file path.
 .TP
-.I $XDG_CONFIG_HOME/hn-auth.toml
+.I $XDG_CONFIG_HOME/hackernews-tim/hn-auth.toml
 Default authentication file path. Stores the Hacker News username,
 password, and (after a successful login) a cached
 .B session
 cookie value in plain text; protect its permissions accordingly.
+.TP
+.I $XDG_CONFIG_HOME/hn-tui.toml ",\ " $HOME/.config/hn-tui.toml
+Legacy configuration paths from before the app moved its files into
+the
+.B hackernews-tim
+subdirectory. Either is automatically copied into the new default
+location on first startup; the original is left in place so the user
+can remove it when they are ready.
+.TP
+.I $XDG_CONFIG_HOME/hn-auth.toml ",\ " $HOME/.config/hn-auth.toml
+Legacy authentication paths, migrated the same way.
 .TP
 .I $XDG_CACHE_HOME/hn-tui.log
 Default log file.
