@@ -1113,61 +1113,118 @@ fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
 /// mirror case means they downvoted. `can_downvote` tracks whether HN
 /// rendered a downvote link for this item — i.e. the user has the privilege.
 fn parse_vote_data_from_content(page_content: &str) -> Result<HashMap<String, VoteData>> {
-    let upvote_rg = regex::Regex::new("<a.*?id='up_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
+    // `[^>]*?` keeps each match inside a single `<a ...>` open tag. The
+    // earlier `.*?` pattern happily crossed tag boundaries, which would
+    // let a neighbouring anchor's attributes leak into the captured tag
+    // and defeat the `nosee` check below.
+    let upvote_rg =
+        regex::Regex::new("<a[^>]*?id='up_(?P<id>[^']*?)'[^>]*?auth=(?P<auth>[0-9a-z]*)[^>]*?>")?;
     let downvote_rg =
-        regex::Regex::new("<a.*?id='down_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
-    let unvote_rg = regex::Regex::new("<a.*?id='un_(?P<id>.*?)'.*?auth=(?P<auth>[0-9a-z]*).*?>")?;
+        regex::Regex::new("<a[^>]*?id='down_(?P<id>[^']*?)'[^>]*?auth=(?P<auth>[0-9a-z]*)[^>]*?>")?;
+    // Capture the un_ anchor's inner text too: HN sets it to `unvote`
+    // for an upvote and `undown` for a downvote — the only reliable
+    // signal in the DOM for the user's vote direction.
+    let unvote_rg = regex::Regex::new(
+        "<a[^>]*?id='un_(?P<id>[^']*?)'[^>]*?auth=(?P<auth>[0-9a-z]*)[^>]*?>(?P<text>[^<]*)</a>",
+    )?;
 
     #[derive(Default)]
     struct Flags {
-        has_up: bool,
-        has_down: bool,
+        // `<a id='up_...'>` rendered without `class='nosee'` — the arrow
+        // is live and the user hasn't used their upvote on this item.
+        up_clickable: bool,
+        // `<a id='up_...'>` rendered at all (with or without nosee). HN
+        // omits the tag entirely only for items the user cannot upvote
+        // (typically: their own post).
+        up_present: bool,
+        down_clickable: bool,
+        // `<a id='down_...'>` rendered at all. HN omits it for users who
+        // lack the karma to downvote, so presence implies downvote
+        // privilege on this item — independent of whether a vote was
+        // already cast.
+        down_present: bool,
+        // `<a id='un_...'>` present. Rendered for recent votes that are
+        // still within HN's unvote window; always clickable (no nosee).
         has_un: bool,
+        // Vote direction recovered from the un_ anchor's link text, if any.
+        un_direction: Option<VoteDirection>,
         auth: String,
     }
 
     let mut flags: HashMap<String, Flags> = HashMap::new();
-    let mut record = |rg: &regex::Regex, mark: fn(&mut Flags)| {
-        for c in rg.captures_iter(page_content) {
-            let id = c.name("id").unwrap().as_str().to_owned();
-            let auth = c.name("auth").unwrap().as_str().to_owned();
-            let entry = flags.entry(id).or_default();
-            mark(entry);
-            if !auth.is_empty() {
-                entry.auth = auth;
-            }
+    // HN does not remove the used-up arrow after voting — it keeps both
+    // `<a id='up_...'>` and `<a id='down_...'>` tags and adds
+    // `class='nosee'` to hide them via CSS. The vote direction is
+    // recovered from the un_ anchor's link text: `unvote` for an
+    // upvote, `undown` for a downvote. Older votes past the unvote
+    // window render neither an un_ anchor nor a direction-bearing
+    // cue; for those we fall back to assuming an upvote, since
+    // downvotes on comments are rare and gated on high karma.
+    for c in upvote_rg.captures_iter(page_content) {
+        let whole = c.get(0).unwrap().as_str();
+        let id = c.name("id").unwrap().as_str().to_owned();
+        let auth = c.name("auth").unwrap().as_str().to_owned();
+        let entry = flags.entry(id).or_default();
+        entry.up_present = true;
+        if !whole.contains("nosee") {
+            entry.up_clickable = true;
         }
-    };
-    record(&upvote_rg, |f| f.has_up = true);
-    record(&downvote_rg, |f| f.has_down = true);
-    record(&unvote_rg, |f| f.has_un = true);
+        if !auth.is_empty() {
+            entry.auth = auth;
+        }
+    }
+    for c in downvote_rg.captures_iter(page_content) {
+        let whole = c.get(0).unwrap().as_str();
+        let id = c.name("id").unwrap().as_str().to_owned();
+        let auth = c.name("auth").unwrap().as_str().to_owned();
+        let entry = flags.entry(id).or_default();
+        entry.down_present = true;
+        if !whole.contains("nosee") {
+            entry.down_clickable = true;
+        }
+        if !auth.is_empty() {
+            entry.auth = auth;
+        }
+    }
+    for c in unvote_rg.captures_iter(page_content) {
+        let id = c.name("id").unwrap().as_str().to_owned();
+        let auth = c.name("auth").unwrap().as_str().to_owned();
+        let text = c.name("text").map(|m| m.as_str().trim()).unwrap_or("");
+        let entry = flags.entry(id).or_default();
+        entry.has_un = true;
+        entry.un_direction = match text {
+            "undown" => Some(VoteDirection::Down),
+            // `unvote` is the upvote case. Anything else (unexpected text,
+            // trimmed-to-empty) falls back to the "voted, direction
+            // unknown" branch below.
+            "unvote" => Some(VoteDirection::Up),
+            _ => None,
+        };
+        if !auth.is_empty() {
+            entry.auth = auth;
+        }
+    }
 
     let hm = flags
         .into_iter()
         .map(|(id, f)| {
-            let (vote, can_downvote) = match (f.has_up, f.has_down, f.has_un) {
-                // Not voted, both arrows rendered → can upvote or downvote.
-                (true, true, false) => (None, true),
-                // Not voted, only upvote arrow → no downvote privilege.
-                (true, false, false) => (None, false),
-                // Voted, downvote arrow still rendered → upvoted (up arrow
-                // was consumed by the `un` link).
-                (false, true, true) => (Some(VoteDirection::Up), true),
-                // Voted, upvote arrow still rendered → downvoted.
-                (true, false, true) => (Some(VoteDirection::Down), true),
-                // Voted, no arrows left → user lacks downvote privilege, so
-                // the vote must be an upvote.
-                (false, false, true) => (Some(VoteDirection::Up), false),
-                // Any other combination is unexpected; fall back to the
-                // conservative "not voted" reading.
-                _ => (None, f.has_down),
+            let voted = f.has_un
+                || (f.up_present && !f.up_clickable)
+                || (f.down_present && !f.down_clickable);
+            let vote = if voted {
+                // Prefer the un_ text (authoritative for recent votes).
+                // Fall back to Up for older votes past the unvote window,
+                // whose DOM carries no direction cue.
+                Some(f.un_direction.unwrap_or(VoteDirection::Up))
+            } else {
+                None
             };
             (
                 id,
                 VoteData {
                     auth: f.auth,
                     vote,
-                    can_downvote,
+                    can_downvote: f.down_present,
                 },
             )
         })
@@ -1376,25 +1433,30 @@ mod tests {
 
     #[test]
     fn parses_upvoted_item_with_downvote_privilege() {
-        // After upvoting, HN removes the `up_<id>` link, leaves `down_<id>`,
-        // and adds the `un_<id>` rescind link.
+        // Real HN shape after upvoting: both arrows stay in the DOM with
+        // `class='clicky nosee'` hiding them via CSS, and the `un_` link
+        // renders with text `unvote`.
         let html = concat!(
-            "<a id='down_3' href='vote?id=3&amp;how=down&amp;auth=ccc333'>x</a>",
-            "<a id='un_3' href='vote?id=3&amp;how=un&amp;auth=ccc333'>unvote</a>",
+            "<a id='up_3' class='clicky nosee' href='vote?id=3&amp;how=up&amp;auth=ccc333'>x</a>",
+            "<a id='down_3' class='clicky nosee' href='vote?id=3&amp;how=down&amp;auth=ccc333'>x</a>",
+            "<a id='un_3' class='clicky' href='vote?id=3&amp;how=un&amp;auth=ccc333'>unvote</a>",
         );
         let data = parse_vote_data_from_content(html).unwrap();
         let v = data.get("3").expect("expected vote data for id=3");
         assert_eq!(v.vote, Some(VoteDirection::Up));
         assert!(v.can_downvote);
+        assert_eq!(v.auth, "ccc333");
     }
 
     #[test]
     fn parses_downvoted_item() {
-        // Mirror of the upvoted case: the `down_<id>` arrow was replaced by
-        // the `un_<id>` link while `up_<id>` is still available.
+        // Real HN shape after downvoting: identical to upvoted except the
+        // `un_` link text reads `undown`. That text is the only signal in
+        // the DOM that distinguishes a downvote from an upvote.
         let html = concat!(
-            "<a id='up_4' href='vote?id=4&amp;how=up&amp;auth=ddd444'>x</a>",
-            "<a id='un_4' href='vote?id=4&amp;how=un&amp;auth=ddd444'>unvote</a>",
+            "<a id='up_4' class='clicky nosee' href='vote?id=4&amp;how=up&amp;auth=ddd444'>x</a>",
+            "<a id='down_4' class='clicky nosee' href='vote?id=4&amp;how=down&amp;auth=ddd444'>x</a>",
+            "<a id='un_4' class='clicky' href='vote?id=4&amp;how=un&amp;auth=ddd444'>undown</a>",
         );
         let data = parse_vote_data_from_content(html).unwrap();
         let v = data.get("4").expect("expected vote data for id=4");
@@ -1404,12 +1466,62 @@ mod tests {
 
     #[test]
     fn parses_upvoted_item_without_downvote_privilege() {
-        // User without downvote karma who already upvoted: only `un_<id>`.
-        let html = "<a id='un_5' href='vote?id=5&amp;how=un&amp;auth=eee555'>unvote</a>";
+        // User without downvote karma who already upvoted: `up_` stays in
+        // the DOM with nosee, no `down_` anchor is rendered at all, and
+        // the `un_` link carries the `unvote` text.
+        let html = concat!(
+            "<a id='up_5' class='clicky nosee' href='vote?id=5&amp;how=up&amp;auth=eee555'>x</a>",
+            "<a id='un_5' class='clicky' href='vote?id=5&amp;how=un&amp;auth=eee555'>unvote</a>",
+        );
         let data = parse_vote_data_from_content(html).unwrap();
         let v = data.get("5").expect("expected vote data for id=5");
         assert_eq!(v.vote, Some(VoteDirection::Up));
         assert!(!v.can_downvote);
+    }
+
+    #[test]
+    fn parses_vote_past_unvote_window() {
+        // Older votes no longer render an `un_` anchor, but HN still
+        // hides both vote arrows with nosee. Without un_ text we can't
+        // tell direction, so fall back to an upvote (the common case).
+        let html = concat!(
+            "<a id='up_6' class='clicky nosee' href='vote?id=6&amp;how=up&amp;auth=fff666'>x</a>",
+            "<a id='down_6' class='clicky nosee' href='vote?id=6&amp;how=down&amp;auth=fff666'>x</a>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("6").expect("expected vote data for id=6");
+        assert_eq!(v.vote, Some(VoteDirection::Up));
+        assert!(v.can_downvote);
+    }
+
+    #[test]
+    fn parses_own_comment_has_no_vote_entry() {
+        // HN omits every vote anchor for the logged-in user's own items,
+        // so the parser should produce no entry for them.
+        let html = concat!(
+            "<tr class='athing comtr' id='7'>",
+            "<td><span>my own comment, no vote links</span></td>",
+            "</tr>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        assert!(data.get("7").is_none());
+    }
+
+    #[test]
+    fn neighbouring_nosee_does_not_leak_across_tags() {
+        // Regression guard: an unrelated `nosee`-classed anchor sitting
+        // next to a live upvote arrow must not mark the upvote arrow as
+        // hidden. The old `.*?` regex could consume characters across
+        // tag boundaries and trip this up.
+        let html = concat!(
+            "<a class='clicky nosee' href='something'>decoy</a>",
+            "<a id='up_8' class='clicky' href='vote?id=8&amp;how=up&amp;auth=888888'>x</a>",
+            "<a id='down_8' class='clicky' href='vote?id=8&amp;how=down&amp;auth=888888'>x</a>",
+        );
+        let data = parse_vote_data_from_content(html).unwrap();
+        let v = data.get("8").expect("expected vote data for id=8");
+        assert_eq!(v.vote, None);
+        assert!(v.can_downvote);
     }
 
     #[test]
@@ -1678,5 +1790,83 @@ mod tests {
     #[test]
     fn parse_comments_returns_empty_when_page_has_no_comments() {
         assert!(parse_comments_from_content("<html><body></body></html>").is_empty());
+    }
+
+    // Captured from an authenticated session on `/item?id=47882645`. Covers
+    // (a) the root story, upvoted with no downvote arrow; (b) a recently
+    // upvoted comment (47889861) whose `un_` link carries the `unvote`
+    // text; (c) older upvoted comments past the unvote window whose only
+    // cue is both arrows carrying `nosee`; (d) an unvoted not-own comment
+    // (47890764); (e) the user's own comment (47891300) with no vote
+    // links at all. Auth tokens have been redacted; refresh the fixture
+    // rather than loosening these assertions if HN's markup drifts.
+    const ITEM_PAGE_AUTHENTICATED_HTML: &str =
+        include_str!("../../tests/fixtures/item_page_authenticated.html");
+
+    // Captured from an authenticated session on `/item?id=47889387` — a
+    // single comment the user downvoted. The `un_` anchor's `undown`
+    // text is the only cue in the DOM for the direction.
+    const DOWNVOTED_COMMENT_PAGE_HTML: &str =
+        include_str!("../../tests/fixtures/downvoted_comment_page.html");
+
+    #[test]
+    fn fixture_marks_recently_upvoted_comment_as_upvote() {
+        let data = parse_vote_data_from_content(ITEM_PAGE_AUTHENTICATED_HTML).unwrap();
+        let v = data
+            .get("47889861")
+            .expect("upvoted comment should have vote data");
+        assert_eq!(v.vote, Some(VoteDirection::Up));
+        assert!(v.can_downvote);
+    }
+
+    #[test]
+    fn fixture_marks_old_upvoted_comments_past_unvote_window() {
+        // These ids appear on the page with both arrows nosee'd but no
+        // `un_` anchor — HN's shape for votes past the unvote window.
+        // Direction can't be recovered from the DOM, so the parser falls
+        // back to `Up`.
+        let data = parse_vote_data_from_content(ITEM_PAGE_AUTHENTICATED_HTML).unwrap();
+        for id in ["47885819", "47886877", "47887119", "47887934"] {
+            let v = data
+                .get(id)
+                .unwrap_or_else(|| panic!("expected vote data for id={id}"));
+            assert_eq!(
+                v.vote,
+                Some(VoteDirection::Up),
+                "id={id} should parse as upvoted"
+            );
+            assert!(v.can_downvote, "id={id} should retain downvote privilege");
+        }
+    }
+
+    #[test]
+    fn fixture_leaves_unvoted_not_own_comment_alone() {
+        let data = parse_vote_data_from_content(ITEM_PAGE_AUTHENTICATED_HTML).unwrap();
+        let v = data
+            .get("47890764")
+            .expect("unvoted comment should still have vote data");
+        assert_eq!(v.vote, None);
+        assert!(v.can_downvote);
+    }
+
+    #[test]
+    fn fixture_skips_own_comment_entirely() {
+        // HN omits every vote anchor for the logged-in user's own items,
+        // so there should be no entry at all for 47891300.
+        let data = parse_vote_data_from_content(ITEM_PAGE_AUTHENTICATED_HTML).unwrap();
+        assert!(
+            data.get("47891300").is_none(),
+            "own comment should not appear in vote state"
+        );
+    }
+
+    #[test]
+    fn fixture_marks_downvoted_comment_as_down() {
+        let data = parse_vote_data_from_content(DOWNVOTED_COMMENT_PAGE_HTML).unwrap();
+        let v = data
+            .get("47889387")
+            .expect("downvoted comment should have vote data");
+        assert_eq!(v.vote, Some(VoteDirection::Down));
+        assert!(v.can_downvote);
     }
 }
