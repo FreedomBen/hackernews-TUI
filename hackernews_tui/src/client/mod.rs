@@ -243,23 +243,39 @@ impl HNClient {
             }
         };
 
-        // Parallelize two tasks using [`rayon::join`](https://docs.rs/rayon/latest/rayon/fn.join.html)
-        let (vote_state, comment_receiver) = rayon::join(
-            || {
-                // get the page's vote state
-                log!(
-                    {
-                        let content = self.get_page_content(item_id)?;
-                        self.parse_vote_data(&content)
-                    },
-                    format!("get page's vote state of item (id={item_id}) ")
-                )
-            },
-            // lazily load the page's top comments
-            || self.lazy_load_comments(item.kids),
-        );
-        let vote_state = vote_state?;
-        let comment_receiver = comment_receiver?;
+        // When the user is logged in, the Algolia API's snapshot lags HN's
+        // own HTML by several minutes — long enough that the user can't see
+        // their own freshly-posted comment. Route authenticated sessions
+        // through a single HN HTML fetch that serves both the vote state and
+        // the comment tree. Unauthenticated sessions keep the parallel
+        // Algolia path, which is faster for them and carries no freshness
+        // penalty (they can't vote or reply anyway).
+        let (vote_state, comment_receiver) = if get_user_info().is_some() {
+            let content = log!(
+                self.get_page_content(item_id)?,
+                format!("fetch HN page HTML for comments (id={item_id})")
+            );
+            let vote_state = self.parse_vote_data(&content)?;
+            let receiver = html_comment_receiver(content);
+            (vote_state, receiver)
+        } else {
+            // Parallelize two tasks using [`rayon::join`](https://docs.rs/rayon/latest/rayon/fn.join.html)
+            let (vote_state, comment_receiver) = rayon::join(
+                || {
+                    // get the page's vote state
+                    log!(
+                        {
+                            let content = self.get_page_content(item_id)?;
+                            self.parse_vote_data(&content)
+                        },
+                        format!("get page's vote state of item (id={item_id}) ")
+                    )
+                },
+                // lazily load the page's top comments
+                || self.lazy_load_comments(item.kids),
+            );
+            (vote_state?, comment_receiver?)
+        };
 
         Ok(PageData {
             title,
@@ -935,6 +951,124 @@ fn classify_post_reply_response(body: &str) -> Result<()> {
     Ok(())
 }
 
+/// Spawn a background thread that parses `page_content` into comments and
+/// pushes them through a fresh channel, grouped by top-level thread so the
+/// view can render each subtree as it arrives (matching the progressive
+/// feel of the Algolia loader). The parse is off the UI thread because large
+/// threads can take a few ms and we'd rather the page land before the parse
+/// finishes.
+fn html_comment_receiver(page_content: String) -> CommentReceiver {
+    let (sender, receiver) = crossbeam_channel::bounded(32);
+    std::thread::spawn(move || {
+        let comments = parse_comments_from_content(&page_content);
+        let mut group: Vec<Comment> = Vec::new();
+        for comment in comments {
+            if comment.level == 0
+                && !group.is_empty()
+                && sender.send(std::mem::take(&mut group)).is_err()
+            {
+                return;
+            }
+            group.push(comment);
+        }
+        if !group.is_empty() {
+            let _ = sender.send(group);
+        }
+    });
+    receiver
+}
+
+/// Extract every comment from a rendered HN item page.
+///
+/// HN renders comments as a flat `<tr class="athing comtr">` list — nesting
+/// is encoded by the `indent="N"` attribute on each row's `<td class="ind">`
+/// cell rather than by DOM nesting — so one pass over the rows, in document
+/// order, reconstructs the depth-first tree. `n_children` (total descendants)
+/// is derived from that order by counting subsequent rows whose indent is
+/// greater, which mirrors how the Algolia branch builds it out of nested
+/// `CommentResponse` structures.
+///
+/// Rows with a missing author or missing comment text are skipped — HN uses
+/// those shapes for dead/deleted comments, and the Algolia branch filters
+/// them identically via `CommentResponse -> Vec<Comment>`.
+fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
+    let anchor_rg = match regex::Regex::new(r#"<tr class="athing comtr" id="(\d+)">"#) {
+        Ok(rg) => rg,
+        Err(_) => return Vec::new(),
+    };
+    let indent_rg = regex::Regex::new(r#"<td class="ind" indent="(\d+)">"#).unwrap();
+    let author_rg = regex::Regex::new(r#"<a href="user\?id=([^"]+)" class="hnuser">"#).unwrap();
+    // The age span's title is "YYYY-MM-DDTHH:MM:SS <unix_time>"; grab the
+    // trailing integer so we don't have to parse the human-readable half.
+    let time_rg = regex::Regex::new(r#"<span class="age" title="[^"]* (\d+)">"#).unwrap();
+    let text_rg = regex::Regex::new(r#"(?s)<div class="commtext[^"]*">(.*?)</div>"#).unwrap();
+
+    let anchors: Vec<(u32, usize, usize)> = anchor_rg
+        .captures_iter(page_content)
+        .filter_map(|c| {
+            let id: u32 = c.get(1)?.as_str().parse().ok()?;
+            let m = c.get(0)?;
+            Some((id, m.start(), m.end()))
+        })
+        .collect();
+
+    let mut comments: Vec<Comment> = Vec::with_capacity(anchors.len());
+    for i in 0..anchors.len() {
+        let (id, _, body_start) = anchors[i];
+        let body_end = anchors
+            .get(i + 1)
+            .map(|a| a.1)
+            .unwrap_or(page_content.len());
+        let body = &page_content[body_start..body_end];
+
+        let Some(level) = indent_rg
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<usize>().ok())
+        else {
+            continue;
+        };
+        let Some(author) = author_rg
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .map(|m| decode_html(m.as_str()).to_string())
+        else {
+            continue;
+        };
+        let Some(content) = text_rg
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .map(|m| decode_html(m.as_str()).to_string())
+        else {
+            continue;
+        };
+        let time: u64 = time_rg
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
+
+        comments.push(Comment {
+            id,
+            level,
+            n_children: 0,
+            author,
+            time,
+            content,
+        });
+    }
+
+    // Fill in n_children by walking forward from each row: its descendants
+    // are the contiguous run of following rows with a strictly greater level.
+    let levels: Vec<usize> = comments.iter().map(|c| c.level).collect();
+    for (i, comment) in comments.iter_mut().enumerate() {
+        let level = comment.level;
+        comment.n_children = levels[i + 1..].iter().take_while(|&&l| l > level).count();
+    }
+
+    comments
+}
+
 /// Parse vote data out of a rendered HN item page.
 ///
 /// HN's HTML exposes three anchor ids per voteable item:
@@ -1097,8 +1231,9 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<Option<Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_login_response, listing_path_for_tag, parse_karma_from_profile, parse_reply_form,
-        parse_topcolor_from_profile, parse_vote_data_from_content, StartupLoginStatus,
+        classify_login_response, listing_path_for_tag, parse_comments_from_content,
+        parse_karma_from_profile, parse_reply_form, parse_topcolor_from_profile,
+        parse_vote_data_from_content, StartupLoginStatus,
     };
     use crate::model::VoteDirection;
 
@@ -1335,5 +1470,82 @@ mod tests {
     #[test]
     fn parse_reply_form_returns_none_without_hmac() {
         assert!(parse_reply_form("<html><body>no form here</body></html>").is_none());
+    }
+
+    // Captured from a real item page. Covers 26 comments across 6 indent
+    // levels, so the fixture exercises the n_children walk and the
+    // depth-first ordering at once. Refresh the fixture rather than
+    // loosening these assertions if HN's markup ever drifts.
+    const COMMENT_PAGE_HTML: &str = include_str!("../../tests/fixtures/comment_page.html");
+
+    #[test]
+    fn parse_comments_extracts_all_rows_in_document_order() {
+        let comments = parse_comments_from_content(COMMENT_PAGE_HTML);
+        assert_eq!(comments.len(), 26);
+
+        // Top-level anchor: only indent=0 row in the fixture.
+        let first = &comments[0];
+        assert_eq!(first.id, 43500020);
+        assert_eq!(first.level, 0);
+        assert_eq!(first.author, "mechagodzilla");
+        assert_eq!(first.time, 1743122540);
+        assert!(first.content.starts_with("None of that means"));
+
+        // Second row is the first reply — indent=1.
+        assert_eq!(comments[1].id, 43500174);
+        assert_eq!(comments[1].level, 1);
+    }
+
+    #[test]
+    fn parse_comments_reaches_deepest_indent() {
+        let comments = parse_comments_from_content(COMMENT_PAGE_HTML);
+        let deepest = comments.iter().max_by_key(|c| c.level).unwrap();
+        assert_eq!(deepest.level, 5);
+        assert_eq!(deepest.id, 43501529);
+        assert_eq!(deepest.author, "brookst");
+    }
+
+    #[test]
+    fn parse_comments_counts_descendants_via_indent_walk() {
+        let comments = parse_comments_from_content(COMMENT_PAGE_HTML);
+
+        // Only one indent=0 comment; every other row is its descendant.
+        assert_eq!(comments[0].n_children, 25);
+
+        // Leaf rows have no descendants — sanity check a handful.
+        let leaves: Vec<_> = comments.iter().filter(|c| c.n_children == 0).collect();
+        assert!(leaves.len() >= 10);
+
+        // Mid-tree: id=43500139 has three descendants (parent + two grandchildren).
+        let mid = comments.iter().find(|c| c.id == 43500139).unwrap();
+        assert_eq!(mid.level, 2);
+        assert_eq!(mid.n_children, 4);
+    }
+
+    #[test]
+    fn parse_comments_decodes_html_entities_in_content() {
+        let comments = parse_comments_from_content(COMMENT_PAGE_HTML);
+        let with_entity = comments.iter().find(|c| c.id == 43500174).unwrap();
+        // Fixture has `Dot-com boom&#x2F;bubble ...`; the parser should
+        // decode the `&#x2F;` slash so downstream styling sees real text.
+        assert!(with_entity.content.starts_with("Dot-com boom/bubble"));
+    }
+
+    #[test]
+    fn parse_comments_skips_rows_without_required_fields() {
+        // A row shaped like a deleted comment: no hnuser link and no
+        // commtext div. The Algolia branch also drops these.
+        let html = concat!(
+            r#"<tr class="athing comtr" id="1">"#,
+            r#"<td class="ind" indent="0"></td>"#,
+            r#"<span class="age" title="2025-01-01T00:00:00 1735689600"></span>"#,
+            r#"</tr>"#,
+        );
+        assert!(parse_comments_from_content(html).is_empty());
+    }
+
+    #[test]
+    fn parse_comments_returns_empty_when_page_has_no_comments() {
+        assert!(parse_comments_from_content("<html><body></body></html>").is_empty());
     }
 }
