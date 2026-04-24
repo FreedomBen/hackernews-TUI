@@ -56,7 +56,7 @@ docker run -it aome510/hackernews_tim:latest
 to run the application. You can also use your local configuration file when running the image by running
 
 ```shell
-docker run --rm -v ${CONFIG_FILE_PATH}:/app/hn-tui.toml -it aome510/hackernews_tim:latest
+docker run --rm -v ${CONFIG_FILE_PATH}:/app/config.toml -it aome510/hackernews_tim:latest
 ```
 
 with `${CONFIG_FILE_PATH}` is the path to the local configuration file.
@@ -281,12 +281,12 @@ In `Navigation` mode, the `find_in_view`, `find_next_match`, and `find_prev_matc
 
 ## Configuration
 
-By default, `Hackernews-TIM` will look for the `hn-tui.toml` user-defined config file inside the `hackernews-tim` subdirectory of
+By default, `Hackernews-TIM` will look for the `config.toml` user-defined config file inside the `hackernews-tim` subdirectory of
 
-- the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html), e.g. `~/.config/hackernews-tim/hn-tui.toml` on Linux
+- the [user's config directory](https://docs.rs/dirs-next/latest/dirs_next/fn.config_dir.html), e.g. `~/.config/hackernews-tim/config.toml` on Linux
 - the `.config` directory inside the [user's home directory](https://docs.rs/dirs-next/latest/dirs_next/fn.home_dir.html) as a fallback candidate for legacy files
 
-On startup, if the new-location file is missing but a legacy `hn-tui.toml` (or `hn-auth.toml`) from a pre-subdirectory release still lives directly in one of those directories, the application copies it into the new location automatically. The original file is left in place so you can remove it once you're comfortable with the migration.
+On startup, if the new-location file is missing but a legacy `hn-tui.toml` (from before the config was renamed, or from a pre-subdirectory release) or `hn-auth.toml` still lives directly in one of those directories — or a `hn-tui.toml` sits alongside the new `config.toml` inside the `hackernews-tim` subdir — the application copies it into the new location automatically. The original file is left in place so you can remove it once you're comfortable with the migration.
 
 If no config file is found (neither in the new location nor as a legacy file) and the application is launched from an interactive terminal, it will prompt to write a default config — [`light`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml) or [`dark`](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml). Skip the prompt (press `s` / Enter) and the application falls back to the built-in defaults without writing anything.
 
@@ -297,7 +297,7 @@ To bypass the prompt, use `--init-config <light|dark>` to write a default config
 hackernews_tim --init-config light
 
 # or pick a specific path and the dark variant
-hackernews_tim -c ~/.config/hn-tui.toml --init-config dark
+hackernews_tim -c ~/.config/config.toml --init-config dark
 ```
 
 To pull in newer theme defaults without losing customizations elsewhere, use `--update-theme <light|dark>`. It replaces only the `[theme]` section of the existing `--config` file, leaving keymap, general settings, and surrounding comments in place. It errors out if the config file does not exist (use `--init-config` to create one first).
@@ -310,7 +310,7 @@ hackernews_tim --update-theme dark
 User can also specify the path to config file when running the application with `-c` or `--config` option.
 
 ```shell
-hackernews_tim -c ~/.config/hn-tui.toml
+hackernews_tim -c ~/.config/config.toml
 ```
 
 For further information about the application's configurations, please refer to the example config files ([light](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui.toml), [dark](https://github.com/aome510/hackernews-TUI/blob/main/examples/hn-tui-dark.toml)) and the [config documentation](https://github.com/aome510/hackernews-TUI/blob/main/docs/config.md).
@@ -333,7 +333,7 @@ Users can authenticate their Hacker News account in any of three ways:
    password = ""
    ```
 
-By default, the authentication file lives next to `hn-tui.toml`; pass `-a` /
+By default, the authentication file lives next to `config.toml`; pass `-a` /
 `--auth` to use a different path. Credentials are currently stored in
 plaintext TOML — protect the file with filesystem permissions and don't
 check it into version control.

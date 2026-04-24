@@ -79,7 +79,7 @@ install: release ## Install binary, man page, docs, and example configs under PR
 	install -m 0755 "${RELEASE_BIN}" "${BINDIR}/${BIN_NAME}"
 	install -m 0644 README.md LICENSE "${DOCDIR}/"
 	install -m 0644 docs/config.md "${DOCDIR}/"
-	install -m 0644 examples/hn-tui.toml examples/hn-tui-dark.toml "${EXAMPLEDIR}/"
+	install -m 0644 examples/config.toml examples/config-dark.toml "${EXAMPLEDIR}/"
 	install -m 0644 "docs/${MANPAGE}" "${MANDIR}/${MANPAGE}"
 
 uninstall: ## Remove files installed by 'install'

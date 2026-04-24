@@ -9,7 +9,8 @@ pub mod utils;
 pub mod view;
 
 const APP_CONFIG_SUBDIR: &str = "hackernews-tim";
-const DEFAULT_CONFIG_FILE: &str = "hn-tui.toml";
+const DEFAULT_CONFIG_FILE: &str = "config.toml";
+const LEGACY_CONFIG_FILE: &str = "hn-tui.toml";
 const DEFAULT_AUTH_FILE: &str = "hn-auth.toml";
 const DEFAULT_LOG_FILE: &str = "hn-tui.log";
 
@@ -140,9 +141,10 @@ fn init_app_dirs() -> (
     let app_cache_dir = xdg_cache_dir.join(APP_CONFIG_SUBDIR);
 
     // Directories where older versions stored `hn-tui.toml` / `hn-auth.toml`
-    // directly. Used once at startup to migrate pre-subdir configs into the
-    // new location. Deduped so Linux users without a separate
-    // `$XDG_CONFIG_HOME` don't hit the same dir twice.
+    // directly (i.e. before the app moved into its own subdir). Used once at
+    // startup to migrate pre-subdir configs into the new location. Deduped so
+    // Linux users without a separate `$XDG_CONFIG_HOME` don't hit the same
+    // dir twice.
     let mut legacy_dirs = vec![xdg_config_dir];
     let dot_config = home_dir.join(".config");
     if !legacy_dirs.contains(&dot_config) {
@@ -303,16 +305,22 @@ fn main() {
 
     // One-time migration: if the user hasn't overridden the path and the
     // new default location is empty but a legacy file exists (from before
-    // the app moved its configs into an `APP_CONFIG_SUBDIR` subdirectory),
-    // copy the legacy file in. Skipped under `--init-config` since that
-    // flag is an explicit ask to overwrite with fresh defaults.
+    // the app moved its configs into an `APP_CONFIG_SUBDIR` subdirectory,
+    // or before the config file was renamed from `hn-tui.toml` to
+    // `config.toml`), copy the legacy file in. Skipped under `--init-config`
+    // since that flag is an explicit ask to overwrite with fresh defaults.
     let running_init_config = args.get_one::<String>("init_config").is_some();
     if !running_init_config {
         if args.value_source("config") == Some(clap::parser::ValueSource::DefaultValue) {
-            let sources: Vec<std::path::PathBuf> = legacy_dirs
-                .iter()
-                .map(|d| d.join(DEFAULT_CONFIG_FILE))
-                .collect();
+            let mut sources: Vec<std::path::PathBuf> = Vec::new();
+            // Intermediate state: subdir already adopted but the file was
+            // still named `hn-tui.toml`.
+            if let Some(parent) = config_path.parent() {
+                sources.push(parent.join(LEGACY_CONFIG_FILE));
+            }
+            // Pre-subdir state: `hn-tui.toml` directly under the user's
+            // config dir (or `~/.config`).
+            sources.extend(legacy_dirs.iter().map(|d| d.join(LEGACY_CONFIG_FILE)));
             config::migrate_legacy_file(config_path, &sources);
         }
         if args.value_source("auth") == Some(clap::parser::ValueSource::DefaultValue) {

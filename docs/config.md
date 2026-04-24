@@ -1,6 +1,6 @@
 # Configuration Documentation
 
-User can change the application's configurations by modifying the user's config file (default to be `$HOME/.config/hackernews-tim/hn-tui.toml`). A legacy `$HOME/.config/hn-tui.toml` from a pre-subdirectory release is automatically copied into the new location on first startup; the original is kept until you delete it.
+User can change the application's configurations by modifying the user's config file (default to be `$HOME/.config/hackernews-tim/config.toml`). On first startup the application also migrates legacy files into that location: a `$HOME/.config/hn-tui.toml` from a pre-subdirectory release, or a `$HOME/.config/hackernews-tim/hn-tui.toml` from before the file was renamed to `config.toml`. The original is kept until you delete it.
 
 **Note**: user doesn't need to specify all the options in the config file as a **default** value will be used for non-specified options.
 

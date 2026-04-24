@@ -1,8 +1,8 @@
 use std::io::{self, IsTerminal, Write};
 use std::path::Path;
 
-const LIGHT_CONFIG: &str = include_str!("../../../examples/hn-tui.toml");
-const DARK_CONFIG: &str = include_str!("../../../examples/hn-tui-dark.toml");
+const LIGHT_CONFIG: &str = include_str!("../../../examples/config.toml");
+const DARK_CONFIG: &str = include_str!("../../../examples/config-dark.toml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfigFlavor {
@@ -255,7 +255,7 @@ mod tests {
     fn write_default_config_creates_parent_dirs() {
         let tmp =
             std::env::temp_dir().join(format!("hackernews_tim_init_test_{}", std::process::id()));
-        let path = tmp.join("nested").join("hn-tui.toml");
+        let path = tmp.join("nested").join("config.toml");
         let _ = std::fs::remove_dir_all(&tmp);
 
         write_default_config(&path, ConfigFlavor::Dark).expect("write should succeed");
@@ -338,12 +338,12 @@ quit = "Q"
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let target = tmp.join("hn-tui.toml");
+        let target = tmp.join("config.toml");
         std::fs::write(&target, "target content").unwrap();
 
         let legacy_dir = tmp.join("legacy");
         std::fs::create_dir_all(&legacy_dir).unwrap();
-        let source = legacy_dir.join("hn-tui.toml");
+        let source = legacy_dir.join("config.toml");
         std::fs::write(&source, "legacy content").unwrap();
 
         migrate_legacy_file(&target, &[source]);
@@ -358,8 +358,8 @@ quit = "Q"
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let target = tmp.join("subdir").join("hn-tui.toml");
-        let source = tmp.join("hn-tui.toml");
+        let target = tmp.join("subdir").join("config.toml");
+        let source = tmp.join("config.toml");
         std::fs::write(&source, "legacy content").unwrap();
 
         assert!(
@@ -380,9 +380,9 @@ quit = "Q"
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let target = tmp.join("subdir").join("hn-tui.toml");
-        let missing = tmp.join("a").join("hn-tui.toml");
-        let present = tmp.join("b").join("hn-tui.toml");
+        let target = tmp.join("subdir").join("config.toml");
+        let missing = tmp.join("a").join("config.toml");
+        let present = tmp.join("b").join("config.toml");
         std::fs::create_dir_all(present.parent().unwrap()).unwrap();
         std::fs::write(&present, "from second").unwrap();
 
@@ -398,7 +398,7 @@ quit = "Q"
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let target = tmp.join("subdir").join("hn-tui.toml");
+        let target = tmp.join("subdir").join("config.toml");
         let missing = tmp.join("nonexistent.toml");
 
         migrate_legacy_file(&target, &[missing]);
