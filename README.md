@@ -1,4 +1,4 @@
-# Hackernews-TIM
+# Hackernews-TIM (Hackernews-TUI IMproved)
 
 `hackernews_tim` is a fast and [customizable](https://github.com/aome510/hackernews-TUI/blob/main/docs/config.md) application for browsing Hacker News on the terminal.
 
