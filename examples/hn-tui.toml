@@ -73,7 +73,7 @@ open_help_dialog = "?"
 quit = ["q", "C-c"]
 close_dialog = "esc"
 goto_previous_view = ["backspace", "C-p"]
-goto_search_view = ["/", "C-s"]
+goto_search_view = "C-s"
 goto_front_page_view = "f1"
 goto_all_stories_view = "f2"
 goto_ask_hn_view = "f3"
@@ -128,6 +128,7 @@ open_article_in_article_view = "A"
 open_link_in_browser = "o"
 open_link_in_article_view = "O"
 toggle_collapse_comment = "tab"
+find_in_view = ["/", "C-f"]
 
 [keymap.article_view_keymap]
 open_article_in_browser = "a"

@@ -120,7 +120,7 @@ impl Default for GlobalKeyMap {
                 event::Event::CtrlChar('p'),
             ]),
 
-            goto_search_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('s')]),
+            goto_search_view: Keys::new(vec![event::Event::CtrlChar('s')]),
 
             goto_front_page_view: Keys::new(vec![event::Key::F1.into()]),
             goto_all_stories_view: Keys::new(vec![event::Key::F2.into()]),
@@ -226,6 +226,8 @@ pub struct CommentViewKeyMap {
     pub edit: Keys,
 
     pub toggle_collapse_comment: Keys,
+
+    pub find_in_view: Keys,
 }
 
 impl Default for CommentViewKeyMap {
@@ -252,6 +254,8 @@ impl Default for CommentViewKeyMap {
             edit: Keys::new(vec!['e'.into()]),
 
             toggle_collapse_comment: Keys::new(vec![event::Key::Tab.into()]),
+
+            find_in_view: Keys::new(vec!['/'.into(), event::Event::CtrlChar('f')]),
         }
     }
 }

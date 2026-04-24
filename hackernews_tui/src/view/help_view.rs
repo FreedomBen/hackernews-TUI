@@ -456,6 +456,10 @@ impl HasHelpView for comment_view::CommentView {
                             "Toggle collapsing the focused item",
                         ),
                         Command::new(
+                            comment_view_keymap.find_in_view.to_string(),
+                            "Find on page: highlight comments matching a query (enter jumps to next, esc clears)",
+                        ),
+                        Command::new(
                             comment_view_keymap.upvote.to_string(),
                             "Toggle upvoting the focused item",
                         ),

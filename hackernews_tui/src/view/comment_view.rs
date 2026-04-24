@@ -1,3 +1,4 @@
+use super::find_bar::{self, FindSignal, FindStateRef};
 use super::{article_view, async_view, help_view::HasHelpView, text_view, traits::*, utils};
 use crate::prelude::*;
 use crate::view::text_view::{StyledPaddingChar, TextPadding};
@@ -11,6 +12,9 @@ pub struct CommentView {
     data: PageData,
 
     raw_command: String,
+
+    find_state: FindStateRef,
+    find_matches: Vec<usize>,
 }
 
 pub enum NavigationDirection {
@@ -20,10 +24,15 @@ pub enum NavigationDirection {
 
 impl ViewWrapper for CommentView {
     wrap_impl!(self.view: ScrollView<LinearLayout>);
+
+    fn wrap_layout(&mut self, size: Vec2) {
+        self.process_find_signal();
+        self.view.layout(size);
+    }
 }
 
 impl CommentView {
-    pub fn new(data: PageData) -> Self {
+    pub fn new(data: PageData, find_state: FindStateRef) -> Self {
         let mut view = CommentView {
             view: LinearLayout::vertical()
                 .child(HideableView::new(PaddedView::lrtb(
@@ -40,10 +49,82 @@ impl CommentView {
             items: vec![data.root_item.clone()],
             raw_command: String::new(),
             data,
+            find_state,
+            find_matches: Vec::new(),
         };
 
         view.try_update_comments();
         view
+    }
+
+    /// Poll the shared find state and apply any pending signal. Called
+    /// from `wrap_layout` so the UI reacts on the layout pass that
+    /// follows a find dialog keystroke.
+    fn process_find_signal(&mut self) {
+        let signal = self.find_state.borrow_mut().pending.take();
+        match signal {
+            Some(FindSignal::Update) => {
+                let query = self.find_state.borrow().query.clone();
+                self.apply_find_query(&query);
+            }
+            Some(FindSignal::Clear) => {
+                self.clear_find_highlights();
+                self.find_matches.clear();
+                self.find_state.borrow_mut().query.clear();
+            }
+            Some(FindSignal::JumpNext) => {
+                self.jump_to_next_match();
+            }
+            None => {}
+        }
+    }
+
+    /// Re-highlight every item with the new `query` and update the
+    /// tracked `find_matches` list. Restores original text when
+    /// `query` is empty or has zero matches.
+    fn apply_find_query(&mut self, query: &str) {
+        let style: Style = config::get_config_theme()
+            .component_style
+            .matched_highlight
+            .into();
+        let mut matches = Vec::new();
+        for id in 0..self.items.len() {
+            let base = self.items[id].text(self.get_vote_status(self.items[id].id));
+            let (new_text, count) = find_bar::highlight_matches(&base, query, style);
+            if count > 0 {
+                matches.push(id);
+            }
+            self.get_item_view_mut(id)
+                .get_inner_mut()
+                .get_inner_mut()
+                .set_content(new_text);
+        }
+        self.find_matches = matches;
+    }
+
+    /// Restore each item's canonical text from its state-based renderer.
+    fn clear_find_highlights(&mut self) {
+        for id in 0..self.items.len() {
+            self.update_item_text_content(id);
+        }
+    }
+
+    /// Move focus to the next matched item at or after the current focus.
+    /// Wraps to the first match when none follow the current focus.
+    fn jump_to_next_match(&mut self) {
+        if self.find_matches.is_empty() {
+            return;
+        }
+        let current = self.get_focus_index();
+        let target = self
+            .find_matches
+            .iter()
+            .find(|&&i| i >= current)
+            .copied()
+            .or_else(|| self.find_matches.first().copied());
+        if let Some(target) = target {
+            self.set_focus_index(target);
+        }
     }
 
     /// Check the comment receiver channel if there are new comments loaded
@@ -344,7 +425,10 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
     let article_url = data.url.clone();
     let page_url = format!("{}/item?id={}", client::HN_HOST_URL, data.root_item.id);
 
-    OnEventView::new(CommentView::new(data))
+    let find_state = find_bar::FindState::new_ref();
+    let find_state_for_key = find_state.clone();
+
+    OnEventView::new(CommentView::new(data, find_state))
         .on_pre_event_inner(EventTrigger::from_fn(|_| true), move |s, e| {
             s.try_update_comments();
 
@@ -512,6 +596,17 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
         })
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(CommentView::construct_on_event_help_view());
+        })
+        // Open the find-on-page dialog. Stale highlights from a previous
+        // session are cleared before opening so the view doesn't briefly
+        // show last-search highlights with an empty new query.
+        .on_pre_event(comment_view_keymap.find_in_view.clone(), move |s| {
+            {
+                let mut state = find_state_for_key.borrow_mut();
+                state.query.clear();
+                state.pending = Some(FindSignal::Clear);
+            }
+            s.add_layer(find_bar::construct_find_dialog(find_state_for_key.clone()));
         })
         // vim-style half-page cursor movement
         .on_pre_event_inner(scroll_keymap.page_down, |s, _| s.move_focus_half_page(true))

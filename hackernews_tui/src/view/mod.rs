@@ -1,4 +1,5 @@
 mod async_view;
+mod find_bar;
 mod fn_view_wrapper;
 mod link_dialog;
 mod login_dialog;

@@ -160,7 +160,7 @@ For more information about configuring the application's key mappings or definin
 | `close_dialog`               | Close a dialog                                               | `esc`              |
 | `quit`                       | Quit the application                                         | `[q, C-c]`         |
 | `goto_previous_view`         | Go to the previous view                                      | `[backspace, C-p]` |
-| `goto_search_view`           | Go to search view                                            | `[/, C-s]`         |
+| `goto_search_view`           | Go to search view                                            | `C-s`              |
 | `goto_front_page_view`       | Go to front page view                                        | `F1`               |
 | `goto_all_stories_view`      | Go to all stories view                                       | `F2`               |
 | `goto_ask_hn_view`           | Go to ask HN view                                            | `F3`               |
@@ -240,6 +240,7 @@ For more information about configuring the application's key mappings or definin
 | `prev_top_level_comment`       | Focus the previous top level comment                                            | `p`              |
 | `parent_comment`               | Focus the parent comment (if exists)                                            | `u`              |
 | `toggle_collapse_comment`      | Toggle collapsing the focused item                                              | `tab`            |
+| `find_in_view`                 | Find on page: highlight matching comments (enter jumps to next, esc clears)     | `[/, C-f]`       |
 | `upvote`                       | Toggle upvoting the focused item (**requires [authentication](#authentication)**) | `v`              |
 | `downvote`                     | Toggle downvoting the focused item (**requires downvote privilege**)            | `V`              |
 | `reply`                        | Reply to the focused item in `$EDITOR` (**requires [authentication](#authentication)**) | `r`        |
