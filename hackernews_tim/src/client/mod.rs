@@ -821,27 +821,39 @@ impl HNClient {
     /// failure path after typing a full edit.
     pub fn fetch_edit_form(&self, comment_id: u32) -> Result<EditForm> {
         let url = format!("{HN_HOST_URL}/edit?id={comment_id}");
-        let body = self
+        let response = self
             .client
             .get(&url)
             .call()
-            .with_context(|| format!("fetching {url}"))?
-            .into_string()?;
+            .with_context(|| format!("fetching {url}"))?;
+        let status = response.status();
+        let body = response.into_string()?;
+        let body_len = body.len();
         let hmac = extract_hidden_input(&body, "hmac").ok_or_else(|| {
-            let dump_path =
-                std::env::temp_dir().join(format!("hn-edit-response-{comment_id}.html"));
-            let hint = match std::fs::write(&dump_path, &body) {
-                Ok(()) => {
-                    format!(
+            let cause = if body.trim().is_empty() {
+                "HN returned an empty response — likely a transient hiccup; try again"
+            } else {
+                "not your comment, edit window closed, or HN changed its markup"
+            };
+            // A 0-byte dump is just noise; skip it.
+            let hint = if body.is_empty() {
+                String::new()
+            } else {
+                let dump_path =
+                    std::env::temp_dir().join(format!("hn-edit-response-{comment_id}.html"));
+                match std::fs::write(&dump_path, &body) {
+                    Ok(()) => format!(
                         " (response body saved to {} for inspection)",
                         dump_path.display()
-                    )
+                    ),
+                    Err(_) => String::new(),
                 }
-                Err(_) => String::new(),
             };
+            warn!(
+                "fetch_edit_form (id={comment_id}) form lookup failed: status={status}, body_len={body_len} — {cause}"
+            );
             anyhow::anyhow!(
-                "no edit form on {url} — not your comment, edit window closed, \
-                 or HN changed its markup{hint}"
+                "no edit form on {url} (status={status}, body_len={body_len}) — {cause}{hint}"
             )
         })?;
         let text = extract_textarea(&body, "text")
@@ -875,36 +887,41 @@ impl HNClient {
     /// the session cookies carried by [`self.client`]. If the user isn't
     /// logged in, HN redirects the GET to its login page and the form lookup
     /// fails — we surface that as an explicit error instead of a silent noop.
+    /// An empty response body (HN occasionally serves one for locked/dead
+    /// items or transient hiccups) is also distinguished so a retry-or-investigate
+    /// hint reaches the user.
     pub fn post_reply(&self, parent_id: u32, text: &str) -> Result<()> {
         let page_url = format!("{HN_HOST_URL}/reply?id={parent_id}");
-        let page_body = self
+        let response = self
             .client
             .get(&page_url)
             .call()
-            .with_context(|| format!("fetching {page_url}"))?
-            .into_string()?;
+            .with_context(|| format!("fetching {page_url}"))?;
+        let status = response.status();
+        let page_body = response.into_string()?;
+        let body_len = page_body.len();
         let hmac = parse_reply_form(&page_body).ok_or_else(|| {
-            let dump_path =
-                std::env::temp_dir().join(format!("hn-reply-response-{parent_id}.html"));
-            let hint = match std::fs::write(&dump_path, &page_body) {
-                Ok(()) => {
-                    format!(
+            let cause = classify_missing_reply_form(&page_body);
+            // A 0-byte dump is just noise; skip it.
+            let hint = if page_body.is_empty() {
+                String::new()
+            } else {
+                let dump_path =
+                    std::env::temp_dir().join(format!("hn-reply-response-{parent_id}.html"));
+                match std::fs::write(&dump_path, &page_body) {
+                    Ok(()) => format!(
                         " (response body saved to {} for inspection)",
                         dump_path.display()
-                    )
+                    ),
+                    Err(_) => String::new(),
                 }
-                Err(_) => String::new(),
             };
-            let looks_like_login =
-                page_body.contains(r#"name="acct""#) || page_body.contains(r#"name='acct'"#);
-            let cause = if looks_like_login {
-                "HN redirected the GET to its login page — the cached session is probably stale. \
-                 Try deleting the `session` line in hn-auth.toml and restarting, or re-paste a \
-                 fresh cookie"
-            } else {
-                "hmac field missing, or HN changed its markup"
-            };
-            anyhow::anyhow!("no reply form on {page_url} — {cause}{hint}")
+            warn!(
+                "post_reply (id={parent_id}) form lookup failed: status={status}, body_len={body_len} — {cause}"
+            );
+            anyhow::anyhow!(
+                "no reply form on {page_url} (status={status}, body_len={body_len}) — {cause}{hint}"
+            )
         })?;
         let parent = parent_id.to_string();
         let comment_url = format!("{HN_HOST_URL}/comment");
@@ -1075,6 +1092,27 @@ fn extract_textarea(body: &str, name: &str) -> Option<String> {
 /// which is what a browser does too.
 fn parse_reply_form(body: &str) -> Option<String> {
     extract_hidden_input(body, "hmac")
+}
+
+/// Pick the human-readable cause for [`HNClient::post_reply`] when the GET
+/// succeeded but the reply form couldn't be parsed.
+///
+/// Three shapes are distinguished so the user gets actionable advice instead
+/// of a generic "form missing" string:
+/// - Empty body — HN returned nothing (transient hiccup, locked/dead item, etc.).
+/// - Login form — session cookie has gone stale.
+/// - Anything else — HN's markup may have drifted.
+fn classify_missing_reply_form(body: &str) -> &'static str {
+    if body.trim().is_empty() {
+        "HN returned an empty response — likely a transient hiccup, or the item is \
+         locked/dead. Try again, or open the item in a browser to confirm replies are open"
+    } else if body.contains(r#"name="acct""#) || body.contains(r#"name='acct'"#) {
+        "HN redirected the GET to its login page — the cached session is probably stale. \
+         Try deleting the `session` line in hn-auth.toml and restarting, or re-paste a \
+         fresh cookie"
+    } else {
+        "hmac field missing, or HN changed its markup"
+    }
 }
 
 /// Extract the `value="..."` of an `<input name="NAME" ...>` element. HN
@@ -1535,10 +1573,11 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<Option<Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_login_response, hn_listing_pages_for_tui_page, listing_path_for_view,
-        parse_comments_from_content, parse_karma_from_profile, parse_reply_form,
-        parse_showdead_from_profile, parse_topcolor_from_profile, parse_vote_data_from_content,
-        parse_vouch_data_from_content, StartupLoginStatus, StorySortMode,
+        classify_login_response, classify_missing_reply_form, hn_listing_pages_for_tui_page,
+        listing_path_for_view, parse_comments_from_content, parse_karma_from_profile,
+        parse_reply_form, parse_showdead_from_profile, parse_topcolor_from_profile,
+        parse_vote_data_from_content, parse_vouch_data_from_content, StartupLoginStatus,
+        StorySortMode,
     };
     use crate::model::VoteDirection;
 
@@ -2093,6 +2132,42 @@ mod tests {
     #[test]
     fn parse_reply_form_returns_none_without_hmac() {
         assert!(parse_reply_form("<html><body>no form here</body></html>").is_none());
+    }
+
+    #[test]
+    fn classify_missing_reply_form_distinguishes_empty_body() {
+        // The exact failure mode that produced /tmp/hn-reply-response-*.html
+        // 0-byte dumps in the wild: HN handed back nothing for the reply page.
+        let cause = classify_missing_reply_form("");
+        assert!(
+            cause.contains("empty response"),
+            "expected empty-body cause, got {cause:?}"
+        );
+        // Whitespace-only also counts as empty.
+        let ws_cause = classify_missing_reply_form("   \n\t");
+        assert_eq!(cause, ws_cause);
+    }
+
+    #[test]
+    fn classify_missing_reply_form_detects_login_redirect() {
+        let body = r#"<html><body><form><input name="acct"></form></body></html>"#;
+        let cause = classify_missing_reply_form(body);
+        assert!(
+            cause.contains("login page"),
+            "expected login cause, got {cause:?}"
+        );
+        // Single-quoted variant — HN ships both shapes.
+        let body_sq = r#"<html><body><form><input name='acct'></form></body></html>"#;
+        assert_eq!(cause, classify_missing_reply_form(body_sq));
+    }
+
+    #[test]
+    fn classify_missing_reply_form_falls_back_to_markup_drift() {
+        let cause = classify_missing_reply_form("<html><body>hello</body></html>");
+        assert!(
+            cause.contains("hmac field missing"),
+            "expected markup-drift cause, got {cause:?}"
+        );
     }
 
     // Captured from a real item page. Covers 26 comments across 6 indent

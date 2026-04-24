@@ -434,8 +434,12 @@ fn main() {
                 match reply_editor::run_editor_for_reply(&parent_content) {
                     Ok(Some(body)) => {
                         match client.post_reply(parent_id, &body) {
-                            Ok(()) => eprintln!("✓ Reply posted to item {parent_id}."),
+                            Ok(()) => {
+                                info!("posted reply to item {parent_id}");
+                                eprintln!("✓ Reply posted to item {parent_id}.")
+                            }
                             Err(err) => {
+                                warn!("reply to item {parent_id} failed: {err:#}");
                                 eprintln!("✗ Reply to item {parent_id} failed: {err:#}")
                             }
                         }
@@ -445,6 +449,7 @@ fn main() {
                         // Empty body → user aborted; re-enter the TUI silently.
                     }
                     Err(err) => {
+                        warn!("editor handoff for reply (id={parent_id}) failed: {err:#}");
                         eprintln!("✗ Editor handoff failed: {err:#}");
                         reply_editor::wait_for_enter();
                     }
@@ -461,9 +466,11 @@ fn main() {
                         Ok(Some(new_text)) if new_text.trim() != form.text.trim() => {
                             match client.submit_comment_edit(comment_id, &form.hmac, &new_text) {
                                 Ok(()) => {
+                                    info!("edited comment {comment_id}");
                                     eprintln!("✓ Edited comment {comment_id}.")
                                 }
                                 Err(err) => {
+                                    warn!("edit of comment {comment_id} failed: {err:#}");
                                     eprintln!("✗ Edit of comment {comment_id} failed: {err:#}")
                                 }
                             }
@@ -473,11 +480,13 @@ fn main() {
                             // Unchanged or cleared → treat as cancel.
                         }
                         Err(err) => {
+                            warn!("editor handoff for edit (id={comment_id}) failed: {err:#}");
                             eprintln!("✗ Editor handoff failed: {err:#}");
                             reply_editor::wait_for_enter();
                         }
                     },
                     Err(err) => {
+                        warn!("fetch edit form for {comment_id} failed: {err:#}");
                         eprintln!("✗ Failed to fetch edit form for {comment_id}: {err:#}");
                         reply_editor::wait_for_enter();
                     }
