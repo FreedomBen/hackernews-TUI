@@ -4,8 +4,30 @@
 
 `hackernews_tim` is written in Rust with the help of [Cursive TUI library](https://github.com/gyscos/cursive/). It uses [HN Algolia APIs](https://hn.algolia.com/api/) and [HN Official APIs](https://github.com/HackerNews/API) to get Hacker News data.
 
+## How we differ from upstream Hackernews-TUI
+
+Hackernews-TIM is a fork of [`hackernews-TUI`](https://github.com/aome510/hackernews-TUI) with additional features and refinements. A full commit-by-commit breakdown lives in [`HN_TIM_IMPROVEMENTS.md`](HN_TIM_IMPROVEMENTS.md). Highlights:
+
+- **Interactive HN login** with a first-run prompt, cached session cookie, and in-app login dialog. Logged-in username, karma, and profile topcolor appear in title bars; your own stories and comments are marked with an orange `*`.
+- **Full voting support**: upvote/downvote stories from the story list, downvote comments, and vouch dead/flagged items. Vote state is pre-fetched so arrows render on every page.
+- **Reply and edit flows**: reply to stories and comments via your `$EDITOR`; edit your own comments in place.
+- **Dead and flagged content is visible** when authenticated, badged with `[dead]` / `[flagged]`, and rendered faded. Honors your HN `showdead` profile setting.
+- **Find-on-page** (`/`, `n`, `N`) across comment, story, article, and search views.
+- **Better navigation**: arrow keys bound alongside `h/j/k/l`, `Ctrl+u` / `Ctrl+d` for half-page scrolling, and `PageUp` / `PageDown` move focus by half a page.
+- **New config knobs**: `--init-config <light|dark>` to write a default config, `--update-theme <light|dark>` to swap just the theme in place, plus configurable page sizes for story listings and search.
+- **Packaging**: top-level `Makefile` (build, install, lint, docker, cross-compile), `hackernews_tui(1)` man page, and a tidier workspace with warnings silenced.
+
+### Breaking changes from upstream
+
+- Binary/crate renamed `hackernews_tui` → `hackernews_tim`.
+- Config file renamed `hn-tui.toml` → `config.toml`; config and auth files moved into a `hackernews-tim/` subdirectory under your config dir. Legacy files are auto-migrated on first run (originals preserved).
+- Log file moved into the `hackernews-tim` cache subdirectory.
+- New default keybindings claim arrow keys, `Ctrl+u`/`Ctrl+d`, `/`, `n`, and `N` in list and article views.
+- Default dark theme uses a more subdued selection color.
+
 ## Table of Contents
 
+- [How we differ from upstream Hackernews-TUI](#how-we-differ-from-upstream-hackernews-tui)
 - [Install](#install)
   - [Binaries](#binaries)
   - [Using Cargo](#using-cargo)
