@@ -30,7 +30,7 @@ truth for individual cases.
 ### Phase 1 (pure-logic tests)
 
 - [x] 1.1 `client/query.rs` — URL/query construction
-- [ ] 1.2 `client/mod.rs` — additional private helpers
+- [x] 1.2 `client/mod.rs` — additional private helpers
 - [ ] 1.3 `config/keybindings.rs` — typed key parsing
 - [ ] 1.4 `parser/html.rs` — HN comment HTML rendering
 - [ ] 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
@@ -87,8 +87,8 @@ showdead). These private helpers are still untested:
 
 | Target                                  | What to assert                                                                                  |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `showdead_query_suffix(sep)`            | Builds the `&` / `?` prefixed `showdead=true` query suffix; returns empty string when disabled. |
-| `extract_textarea(body, "text")`        | Returns inner text of `<textarea name="text">…</textarea>`; `None` when missing; entity-decoded. |
+| `showdead_query_suffix(sep)`            | Builds the `&` / `?` prefixed `showdead=yes` query suffix; returns empty string when disabled. (Tested via the pure helper `build_showdead_query_suffix(sep, enabled)` so the global `USER_INFO` is not in the loop.) |
+| `extract_textarea(body, "text")`        | Returns inner text of `<textarea name="text">…</textarea>`; `None` when missing; raw HTML returned verbatim — entity decoding is the caller's job (`fetch_edit_form` runs `decode_html` on the result). |
 | `extract_hidden_input(body, "hmac")`    | Returns the `value=` of `<input type="hidden" name="hmac">`; `None` when missing.               |
 | `classify_post_reply_response(body)`    | `Ok` on success page; `Err` with specific messages for known failure pages.                      |
 

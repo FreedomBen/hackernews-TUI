@@ -1220,7 +1220,12 @@ fn classify_login_response(body: &str) -> Result<()> {
 /// append unconditionally, but we still gate on the profile preference so
 /// opting out in HN's settings propagates to this TUI as well.
 fn showdead_query_suffix(sep: &str) -> String {
-    if get_user_info().map(|u| u.showdead).unwrap_or(false) {
+    let enabled = get_user_info().map(|u| u.showdead).unwrap_or(false);
+    build_showdead_query_suffix(sep, enabled)
+}
+
+fn build_showdead_query_suffix(sep: &str, enabled: bool) -> String {
+    if enabled {
         format!("{sep}showdead=yes")
     } else {
         String::new()
@@ -1820,11 +1825,12 @@ pub fn verify_credentials(username: &str, password: &str) -> Result<Option<Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_login_response, classify_missing_reply_form, hn_listing_pages_for_tui_page,
-        listing_path_for_view, parse_comments_from_content, parse_karma_from_profile,
-        parse_reply_form, parse_showdead_from_profile, parse_threads_score_map_into,
-        parse_topcolor_from_profile, parse_vote_data_from_content, parse_vouch_data_from_content,
-        StartupLoginStatus, StorySortMode,
+        build_showdead_query_suffix, classify_login_response, classify_missing_reply_form,
+        classify_post_reply_response, extract_hidden_input, extract_textarea,
+        hn_listing_pages_for_tui_page, listing_path_for_view, parse_comments_from_content,
+        parse_karma_from_profile, parse_reply_form, parse_showdead_from_profile,
+        parse_threads_score_map_into, parse_topcolor_from_profile, parse_vote_data_from_content,
+        parse_vouch_data_from_content, StartupLoginStatus, StorySortMode,
     };
     use crate::model::VoteDirection;
     use std::collections::HashMap;
@@ -2665,6 +2671,115 @@ mod tests {
             .expect("downvoted comment should have vote data");
         assert_eq!(v.vote, Some(VoteDirection::Down));
         assert!(v.can_downvote);
+    }
+
+    // --- Phase 1.2: small private helpers ---
+
+    #[test]
+    fn build_showdead_query_suffix_emits_yes_when_enabled() {
+        assert_eq!(build_showdead_query_suffix("&", true), "&showdead=yes");
+        assert_eq!(build_showdead_query_suffix("?", true), "?showdead=yes");
+    }
+
+    #[test]
+    fn build_showdead_query_suffix_empty_when_disabled() {
+        assert_eq!(build_showdead_query_suffix("&", false), "");
+        assert_eq!(build_showdead_query_suffix("?", false), "");
+    }
+
+    #[test]
+    fn extract_textarea_returns_inner_text() {
+        let body = r#"<form><textarea name="text" rows="6">hello world</textarea></form>"#;
+        assert_eq!(extract_textarea(body, "text").as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn extract_textarea_handles_multiline_content() {
+        // (?s) flag must let `.` match newlines so multi-line comments
+        // come back intact.
+        let body = "<textarea name='text'>line one\nline two\nline three</textarea>";
+        assert_eq!(
+            extract_textarea(body, "text").as_deref(),
+            Some("line one\nline two\nline three")
+        );
+    }
+
+    #[test]
+    fn extract_textarea_returns_none_when_missing() {
+        let body = "<form>no textarea here</form>";
+        assert!(extract_textarea(body, "text").is_none());
+    }
+
+    #[test]
+    fn extract_textarea_returns_raw_html_entities() {
+        // The function deliberately doesn't decode entities — the caller
+        // (fetch_edit_form) runs decode_html on the result. Pin that
+        // boundary so a future "convenience" decode here doesn't double-
+        // decode at the caller.
+        let body = r#"<textarea name="text">a &amp; b &lt;c&gt;</textarea>"#;
+        assert_eq!(
+            extract_textarea(body, "text").as_deref(),
+            Some("a &amp; b &lt;c&gt;")
+        );
+    }
+
+    #[test]
+    fn extract_hidden_input_returns_value() {
+        let body = r#"<input type="hidden" name="hmac" value="deadbeef1234">"#;
+        assert_eq!(
+            extract_hidden_input(body, "hmac").as_deref(),
+            Some("deadbeef1234")
+        );
+    }
+
+    #[test]
+    fn extract_hidden_input_accepts_single_quoted_attrs() {
+        let body = "<input type='hidden' name='hmac' value='abc123'>";
+        assert_eq!(extract_hidden_input(body, "hmac").as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn extract_hidden_input_returns_none_when_missing() {
+        let body = "<form><input type='hidden' name='other' value='x'></form>";
+        assert!(extract_hidden_input(body, "hmac").is_none());
+    }
+
+    #[test]
+    fn classify_post_reply_response_ok_on_clean_body() {
+        // Successful posts redirect to the item page, which won't match any
+        // of the error markers.
+        assert!(classify_post_reply_response("<html><body>item page</body></html>").is_ok());
+        assert!(classify_post_reply_response("").is_ok());
+    }
+
+    #[test]
+    fn classify_post_reply_response_detects_expired_link() {
+        let err = classify_post_reply_response(
+            "<html>Unknown or expired link.</html>",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("expired"), "got: {err}");
+    }
+
+    #[test]
+    fn classify_post_reply_response_detects_validation_required() {
+        let err = classify_post_reply_response(
+            "<html><body>Validation required</body></html>",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("CAPTCHA"), "got: {err}");
+    }
+
+    #[test]
+    fn classify_post_reply_response_detects_rate_limit() {
+        let err = classify_post_reply_response(
+            "<html><body>Sorry, You broke the rate limit.</body></html>",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("rate-limited"), "got: {err}");
     }
 
     #[test]
