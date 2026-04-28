@@ -144,3 +144,128 @@ fn read_and_strip(path: &Path) -> std::io::Result<String> {
         .join("\n");
     Ok(body.trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_path(suffix: &str) -> PathBuf {
+        // Match the pattern existing test code uses (e.g. config::init tests).
+        std::env::temp_dir().join(format!(
+            "hn-reply-editor-test-{}-{}-{}.md",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0),
+            suffix
+        ))
+    }
+
+    struct TempFile(PathBuf);
+    impl Drop for TempFile {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+        }
+    }
+
+    fn read(path: &Path) -> String {
+        fs::read_to_string(path).expect("read")
+    }
+
+    #[test]
+    fn write_scaffold_quotes_parent_with_hash_arrow_prefix() {
+        let path = TempFile(temp_path("write_scaffold_quotes"));
+        write_scaffold(&path.0, "first line\nsecond line").expect("write");
+        let body = read(&path.0);
+        assert!(body.contains(SCISSORS), "scissors missing: {body:?}");
+        // Parent is quoted with `# > ` (entire block is also a comment).
+        assert!(
+            body.contains("# > first line"),
+            "expected '# > first line' in {body:?}"
+        );
+        assert!(
+            body.contains("# > second line"),
+            "expected '# > second line' in {body:?}"
+        );
+        // Instructional comments accompany the scissors line.
+        assert!(body.contains("Write your reply above the scissors line"));
+    }
+
+    #[test]
+    fn write_scaffold_handles_empty_parent() {
+        let path = TempFile(temp_path("write_scaffold_empty"));
+        write_scaffold(&path.0, "").expect("write");
+        let body = read(&path.0);
+        // The empty-parent fallback inserts a sentinel.
+        assert!(
+            body.contains("# > (empty)"),
+            "expected empty placeholder; got {body:?}"
+        );
+    }
+
+    #[test]
+    fn write_edit_scaffold_includes_current_text_and_scissors() {
+        let path = TempFile(temp_path("write_edit_scaffold"));
+        write_edit_scaffold(&path.0, "current comment text").expect("write");
+        let body = read(&path.0);
+        assert!(body.contains("current comment text"), "got {body:?}");
+        assert!(body.contains(SCISSORS), "scissors missing: {body:?}");
+        assert!(body.contains("Edit your comment above the scissors line"));
+    }
+
+    #[test]
+    fn read_and_strip_returns_body_above_scissors() {
+        let path = TempFile(temp_path("read_and_strip_body"));
+        fs::write(
+            &path.0,
+            format!("hello world\nsecond line\n{SCISSORS}\n# instructions\n# > parent\n"),
+        )
+        .expect("write");
+        let body = read_and_strip(&path.0).expect("read_and_strip");
+        assert_eq!(body, "hello world\nsecond line");
+    }
+
+    #[test]
+    fn read_and_strip_trims_surrounding_whitespace() {
+        let path = TempFile(temp_path("read_and_strip_trim"));
+        fs::write(&path.0, format!("\n  body  \n\n{SCISSORS}\n# rest\n")).expect("write");
+        let body = read_and_strip(&path.0).expect("read_and_strip");
+        assert_eq!(body, "body");
+    }
+
+    #[test]
+    fn read_and_strip_returns_empty_when_only_scaffold_remains() {
+        let path = TempFile(temp_path("read_and_strip_empty"));
+        // write_scaffold output only (parent text below the scissors).
+        write_scaffold(&path.0, "some parent text").expect("write");
+        let body = read_and_strip(&path.0).expect("read_and_strip");
+        assert_eq!(body, "");
+    }
+
+    #[test]
+    fn scratch_path_lives_in_system_temp_dir() {
+        let p = scratch_path();
+        assert!(
+            p.starts_with(std::env::temp_dir()),
+            "{p:?} not under {:?}",
+            std::env::temp_dir()
+        );
+        let name = p.file_name().unwrap().to_str().unwrap();
+        let pid = std::process::id().to_string();
+        assert!(
+            name.starts_with(&format!("hn-reply-{pid}-")),
+            "unexpected file name: {name:?}"
+        );
+        assert!(name.ends_with(".md"), "unexpected extension in {name:?}");
+    }
+
+    #[test]
+    fn scratch_path_consecutive_calls_yield_distinct_paths() {
+        let a = scratch_path();
+        // Different nanos guarantee a different filename even for the same pid.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let b = scratch_path();
+        assert_ne!(a, b);
+    }
+}

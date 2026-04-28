@@ -35,7 +35,7 @@ truth for individual cases.
 - [x] 1.4 `parser/html.rs` — HN comment HTML rendering
 - [x] 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
 - [x] 1.6 `utils.rs` — formatting helpers
-- [ ] 1.7 `reply_editor.rs` — scaffold I/O
+- [x] 1.7 `reply_editor.rs` — scaffold I/O
 - [ ] 1.8 View-module helpers (lift, then test)
 - [ ] 1.9 Doctests (optional, low priority)
 - [ ] Phase 1 acceptance — `make test` + `cargo clippy -- -D warnings` green; test count roughly doubles
@@ -162,9 +162,9 @@ existing `config::tests::auth_write_*` tests.
 
 | Target                              | What to assert                                                                                       |
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `write_scaffold(path, parent)`      | File contains the parent text quoted with `> ` prefixes plus the boundary line and instructions.    |
-| `write_edit_scaffold(path, text)`   | File contains the current text verbatim plus the boundary line.                                     |
-| `read_and_strip(path)`              | Returns text above the boundary as `Result<String>`; trims surrounding whitespace; returns an empty string when only the scaffold remains. |
+| `write_scaffold(path, parent)`      | File contains the parent text quoted with `# > ` prefixes (the whole quoted block is also a Git-style comment), plus the scissors line `# ------ >8 ------` and instructional comments; an empty parent renders the `# > (empty)` placeholder. |
+| `write_edit_scaffold(path, text)`   | File contains the current text verbatim, followed by the scissors line and edit-mode instructions. |
+| `read_and_strip(path)`              | Returns text above the scissors line as `Result<String>`; trims surrounding whitespace; returns an empty string when only the scaffold remains. |
 | `scratch_path()`                    | Returns a path under the system temp dir matching `hn-reply-{pid}-{nanos}.md`; consecutive calls return distinct paths. |
 
 ### 1.8 View-module helpers (lift, then test)
