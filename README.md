@@ -265,8 +265,8 @@ For more information about configuring the application's key mappings or definin
 | `prev_comment`                 | Focus the previous comment                                                      | `[k, up]`        |
 | `next_leq_level_comment`       | Focus the next comment with smaller or equal level                              | `[l, right]`     |
 | `prev_leq_level_comment`       | Focus the previous comment with smaller or equal level                          | `[h, left]`      |
-| `next_top_level_comment`       | Focus the next top level comment                                                | `n`              |
-| `prev_top_level_comment`       | Focus the previous top level comment                                            | `p`              |
+| `next_top_level_comment`       | Focus the next sibling comment (wraps within the parent's children)             | `n`              |
+| `prev_top_level_comment`       | Focus the previous sibling comment (wraps within the parent's children)         | `p`              |
 | `parent_comment`               | Focus the parent comment (if exists)                                            | `u`              |
 | `toggle_collapse_comment`      | Toggle collapsing the focused item                                              | `tab`            |
 | `find_in_view`                 | Find on page: highlight matching comments (enter jumps to next, esc clears)     | `[/, C-f]`       |

@@ -238,6 +238,48 @@ impl CommentView {
         }
     }
 
+    /// Return the id of the next/previous sibling of the item at
+    /// `start_id`, wrapping within the sibling group. Two items are
+    /// siblings when they share the same immediate parent — i.e. they
+    /// sit at the same indentation level inside the same parent's
+    /// subtree. Items in the parent's subtree are stored in DFS
+    /// preorder, so the parent is the nearest preceding item with a
+    /// strictly lower level, and the subtree ends at the next item
+    /// whose level is `<=` the parent's. Top-level (level 0) items
+    /// keep their historical scope (all level-0 items, no wrap) by
+    /// delegating to `find_item_id_by_max_level`.
+    pub fn find_sibling(&self, start_id: usize, direction: NavigationDirection) -> usize {
+        let level = self.items[start_id].level;
+
+        if level == 0 {
+            return self.find_item_id_by_max_level(start_id, 0, direction);
+        }
+
+        let Some(parent_idx) = (0..start_id).rfind(|&i| self.items[i].level < level) else {
+            return start_id;
+        };
+        let parent_level = self.items[parent_idx].level;
+
+        let subtree_end = ((parent_idx + 1)..self.len())
+            .find(|&i| self.items[i].level <= parent_level)
+            .unwrap_or_else(|| self.len());
+
+        let siblings: Vec<usize> = ((parent_idx + 1)..subtree_end)
+            .filter(|&i| self.items[i].level == level)
+            .collect();
+
+        if siblings.len() <= 1 {
+            return start_id;
+        }
+
+        let pos = siblings.iter().position(|&i| i == start_id).unwrap_or(0);
+        let new_pos = match direction {
+            NavigationDirection::Next => (pos + 1) % siblings.len(),
+            NavigationDirection::Previous => (pos + siblings.len() - 1) % siblings.len(),
+        };
+        siblings[new_pos]
+    }
+
     fn get_vote_status(&self, item_id: u32) -> Option<&VoteData> {
         self.data.vote_state.get(&item_id.to_string())
     }
@@ -628,7 +670,7 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
                 return None;
             }
             let id = s.get_focus_index();
-            let next_id = s.find_item_id_by_max_level(id, 0, NavigationDirection::Next);
+            let next_id = s.find_sibling(id, NavigationDirection::Next);
             s.set_focus_index(next_id)
         })
         .on_pre_event_inner(comment_view_keymap.prev_top_level_comment, move |s, e| {
@@ -636,7 +678,7 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
                 return None;
             }
             let id = s.get_focus_index();
-            let next_id = s.find_item_id_by_max_level(id, 0, NavigationDirection::Previous);
+            let next_id = s.find_sibling(id, NavigationDirection::Previous);
             s.set_focus_index(next_id)
         })
         .on_pre_event_inner(comment_view_keymap.parent_comment, move |s, _| {

@@ -48,6 +48,7 @@ Please review these before merging upstream. Most ship with automatic migration,
 ### Navigation
 - Arrow keys bound alongside `h/j/k/l` in story and comment views.
 - `Ctrl+u` / `Ctrl+d` for half-page scrolling; `PageUp`/`PageDown` now move focus by half a page in list views.
+- `n` / `p` in the comment view are sibling-aware: at depth ≥ 1 they cycle (with wrap) only among comments sharing the same parent, instead of jumping across subtrees at the same indentation. Top-level scope is unchanged.
 
 ### Config
 - `--init-config <light|dark>` flag writes a default config and exits; first-run prompt offers the same.

@@ -409,11 +409,11 @@ impl HasHelpView for comment_view::CommentView {
                     ),
                     Command::new(
                         comment_view_keymap.next_top_level_comment.to_string(),
-                        "Focus the next top level comment",
+                        "Focus the next sibling comment (wraps within the parent)",
                     ),
                     Command::new(
                         comment_view_keymap.prev_top_level_comment.to_string(),
-                        "Focus the previous top level comment",
+                        "Focus the previous sibling comment (wraps within the parent)",
                     ),
                     Command::new(
                         comment_view_keymap.next_leq_level_comment.to_string(),
