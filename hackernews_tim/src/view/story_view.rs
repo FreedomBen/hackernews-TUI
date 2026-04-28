@@ -197,7 +197,7 @@ impl StoryView {
     /// so a background thread fetches the story's HN page to recover the
     /// auth token, submits the vote, and returns the resulting
     /// [`VoteData`] via a channel. The UI picks it up on the next layout.
-    fn apply_vote(&mut self, direction: VoteDirection, client: &'static client::HNClient) {
+    fn apply_vote(&mut self, direction: VoteDirection, client: &'static dyn client::HnApi) {
         let id = self.get_focus_index();
         if id >= self.stories.len() {
             return;
@@ -276,7 +276,7 @@ impl StoryView {
     /// fetches the story page to recover the auth token and the current
     /// `[vouch]`/`[unvouch]` state, posts the flip, and reports the new
     /// state back via `vouch_receiver`.
-    fn apply_vouch(&mut self, client: &'static client::HNClient) {
+    fn apply_vouch(&mut self, client: &'static dyn client::HnApi) {
         let id = self.get_focus_index();
         if id >= self.stories.len() {
             return;
@@ -528,7 +528,7 @@ impl ScrollViewContainer for StoryView {
 
 pub fn construct_story_main_view(
     stories: Vec<Story>,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     starting_id: usize,
     cb_sink: CbSink,
     initial_vote_state: HashMap<u32, VoteData>,
@@ -681,7 +681,7 @@ pub fn construct_story_main_view(
 }
 
 fn get_story_view_title_bar(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     tag: &'static str,
     sort_mode: client::StorySortMode,
 ) -> impl View {
@@ -693,7 +693,7 @@ fn get_story_view_title_bar(
 pub fn construct_story_view(
     stories: Vec<Story>,
     initial_vote_state: HashMap<u32, VoteData>,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     tag: &'static str,
     sort_mode: client::StorySortMode,
     page: usize,
@@ -884,7 +884,7 @@ pub fn construct_story_view(
 /// Retrieve a list of stories satisfying some conditions and construct a story view displaying them.
 pub fn construct_and_add_new_story_view(
     s: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     tag: &'static str,
     sort_mode: client::StorySortMode,
     page: usize,

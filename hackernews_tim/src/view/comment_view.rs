@@ -290,7 +290,7 @@ impl CommentView {
     /// focused item. The HTTP request runs on a background thread and the
     /// UI reflects the new vote immediately (optimistic update); a failed
     /// request is logged but the local state is not rolled back.
-    fn apply_vote(&mut self, direction: VoteDirection, client: &'static client::HNClient) -> bool {
+    fn apply_vote(&mut self, direction: VoteDirection, client: &'static dyn client::HnApi) -> bool {
         let id = self.get_focus_index();
         let item_id = self.items[id].id;
 
@@ -334,7 +334,7 @@ impl CommentView {
     /// those cases the key no-ops. The HTTP request is fire-and-forget;
     /// the local `vouched` flag flips optimistically so an immediate
     /// second keypress rescinds rather than re-vouches.
-    fn apply_vouch(&mut self, client: &'static client::HNClient) -> bool {
+    fn apply_vouch(&mut self, client: &'static dyn client::HnApi) -> bool {
         let id = self.get_focus_index();
         let item_id = self.items[id].id;
 
@@ -526,7 +526,7 @@ fn parse_link_index(raw_command: &str) -> Option<usize> {
     }
 }
 
-fn construct_comment_main_view(client: &'static client::HNClient, data: PageData) -> impl View {
+fn construct_comment_main_view(client: &'static dyn client::HnApi, data: PageData) -> impl View {
     let is_suffix_key = |c: &Event| -> bool {
         let comment_view_keymap = config::get_comment_view_keymap();
         comment_view_keymap.open_link_in_browser.has_event(c)
@@ -836,7 +836,7 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
 }
 
 pub fn construct_comment_view(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     data: PageData,
     nav: utils::NavTarget,
 ) -> impl View {
@@ -868,7 +868,7 @@ pub fn construct_comment_view(
 /// Retrieve comments in a Hacker News item and construct a comment view of that item
 pub fn construct_and_add_new_comment_view(
     s: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     item_id: u32,
     pop_layer: bool,
 ) {
@@ -884,7 +884,7 @@ pub fn construct_and_add_new_comment_view(
 /// <story title>" header link to the parent thread.
 pub fn construct_and_add_new_threads_view(
     s: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     username: String,
     page: usize,
 ) {

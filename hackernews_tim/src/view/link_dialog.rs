@@ -47,7 +47,7 @@ impl LinkDialog {
     }
 }
 
-pub fn get_link_dialog(client: &'static client::HNClient, links: &[String]) -> impl View {
+pub fn get_link_dialog(client: &'static dyn client::HnApi, links: &[String]) -> impl View {
     let view = LinkDialog::new(links);
     let link_dialog_keymap = config::get_link_dialog_keymap().clone();
 

@@ -22,7 +22,7 @@ fn set_up_switch_story_view_shortcut(
     keys: config::Keys,
     tag: &'static str,
     s: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     numeric_filters: Option<client::StoryNumericFilters>,
 ) {
     s.set_on_post_event(keys, move |s| {
@@ -44,7 +44,7 @@ fn set_up_switch_story_view_shortcut(
 
 fn set_up_global_callbacks(
     s: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     auth_file: std::path::PathBuf,
     auth_storage: config::AuthStorage,
 ) {
@@ -205,7 +205,7 @@ fn build_login_status_dialog(status: client::StartupLoginStatus) -> Option<Dialo
 
 /// Initialize the application's UI
 pub fn init_ui(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     start_id: Option<u32>,
     auth_file: std::path::PathBuf,
     auth_storage: config::AuthStorage,

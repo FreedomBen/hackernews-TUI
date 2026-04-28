@@ -137,7 +137,7 @@ fn nav_separator(style: Style) -> impl View {
 /// in the "you are here" style. Wrapped in `OnEventView` so `h`/`l`
 /// alias `Left`/`Right` for vim-style in-strip navigation.
 fn construct_nav_strip(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     active: NavTarget,
     sort_suffix: &str,
 ) -> impl View {
@@ -242,7 +242,7 @@ fn construct_nav_strip(
 /// The nav-strip-only top bar used by the story view. Other views render
 /// the strip plus a description row via [`construct_view_title_bar`].
 pub fn construct_story_view_top_bar(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     active_tag: &'static str,
     sort_mode: client::StorySortMode,
 ) -> impl View {
@@ -276,14 +276,14 @@ pub fn construct_story_view_top_bar(
 /// Construct a view's title bar (nav strip + centered description).
 /// Equivalent to [`construct_view_title_bar_with_nav`] with no nav
 /// target highlighted.
-pub fn construct_view_title_bar(client: &'static client::HNClient, desc: &str) -> impl View {
+pub fn construct_view_title_bar(client: &'static dyn client::HnApi, desc: &str) -> impl View {
     construct_view_title_bar_with_nav(client, desc, NavTarget::None)
 }
 
 /// Two-row title bar: the global nav strip on top (with the matching
 /// entry highlighted), and the per-view description centered below.
 pub fn construct_view_title_bar_with_nav(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     desc: &str,
     nav: NavTarget,
 ) -> impl View {
@@ -343,7 +343,7 @@ pub fn open_url_in_browser(url: &str) {
 /// open in article view the `i`-th link.
 /// Note that the link index starts with `1`.
 pub fn open_ith_link_in_article_view(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     links: &[String],
     i: usize,
 ) -> Option<EventResult> {

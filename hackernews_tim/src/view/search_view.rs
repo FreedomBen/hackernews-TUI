@@ -28,7 +28,7 @@ pub struct SearchView {
     sender: std::sync::mpsc::Sender<MatchedStories>,
     receiver: std::sync::mpsc::Receiver<MatchedStories>,
 
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     cb_sink: CbSink,
 
     /// Shared find-on-page state. Re-used across inner `StoryView`
@@ -40,7 +40,7 @@ pub struct SearchView {
 
 impl SearchView {
     /// constructs new `SearchView`
-    pub fn new(client: &'static client::HNClient, cb_sink: CbSink) -> Self {
+    pub fn new(client: &'static dyn client::HnApi, cb_sink: CbSink) -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
         let find_state = find_bar::FindState::new_ref();
 
@@ -103,7 +103,7 @@ impl SearchView {
 
         std::thread::spawn({
             let sender = self.sender.clone();
-            let client = self.client.clone();
+            let client = self.client;
             let by_date = self.by_date;
             let page = self.page;
 
@@ -198,7 +198,7 @@ impl ViewWrapper for SearchView {
     }
 }
 
-fn construct_search_main_view(client: &'static client::HNClient, cb_sink: CbSink) -> impl View {
+fn construct_search_main_view(client: &'static dyn client::HnApi, cb_sink: CbSink) -> impl View {
     let story_view_keymap = config::get_story_view_keymap().clone();
     let search_view_keymap = config::get_search_view_keymap().clone();
 
@@ -374,7 +374,7 @@ fn construct_search_main_view(client: &'static client::HNClient, cb_sink: CbSink
         })
 }
 
-fn construct_search_view(client: &'static client::HNClient, cb_sink: CbSink) -> impl View {
+fn construct_search_view(client: &'static dyn client::HnApi, cb_sink: CbSink) -> impl View {
     let main_view = construct_search_main_view(client, cb_sink);
 
     let mut view = LinearLayout::vertical()
@@ -398,7 +398,7 @@ fn construct_search_view(client: &'static client::HNClient, cb_sink: CbSink) -> 
         })
 }
 
-pub fn construct_and_add_new_search_view(s: &mut Cursive, client: &'static client::HNClient) {
+pub fn construct_and_add_new_search_view(s: &mut Cursive, client: &'static dyn client::HnApi) {
     let cb_sink = s.cb_sink().clone();
     s.screen_mut()
         .add_transparent_layer(Layer::new(construct_search_view(client, cb_sink)));

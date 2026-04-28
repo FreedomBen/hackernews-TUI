@@ -1174,6 +1174,103 @@ impl HNClient {
     }
 }
 
+/// Read-side API surface that view modules depend on. Abstracted into a
+/// trait so tests can swap [`HNClient`] for an in-memory fake without
+/// touching the network. Methods mirror the corresponding inherent
+/// methods on [`HNClient`] one-for-one.
+///
+/// `Send + Sync` is required because views ship the client into background
+/// threads (rayon, `cursive_async_view`).
+pub trait HnApi: Send + Sync {
+    fn get_page_data(&self, item_id: u32) -> Result<PageData>;
+    fn get_user_threads_page(&self, username: &str, page: usize) -> Result<PageData>;
+    fn get_stories_by_tag(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+        numeric_filters: StoryNumericFilters,
+    ) -> Result<Vec<Story>>;
+    fn get_listing_vote_state(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+    ) -> Result<HashMap<u32, VoteData>>;
+    fn get_listing_vouch_state(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+    ) -> Result<HashMap<u32, VouchData>>;
+    fn get_matched_stories(&self, query: &str, by_date: bool, page: usize) -> Result<Vec<Story>>;
+    fn login(&self, username: &str, password: &str) -> Result<()>;
+    fn current_session_cookie(&self) -> Option<String>;
+    fn vote(&self, id: u32, auth: &str, new_vote: Option<VoteDirection>) -> Result<()>;
+    fn vouch(&self, id: u32, auth: &str, rescind: bool) -> Result<()>;
+    fn get_vote_data_for_item(&self, item_id: u32) -> Result<Option<VoteData>>;
+    fn get_vouch_data_for_item(&self, item_id: u32) -> Result<Option<VouchData>>;
+    fn get_article(&self, url: &str) -> Result<Article>;
+}
+
+impl HnApi for HNClient {
+    fn get_page_data(&self, item_id: u32) -> Result<PageData> {
+        HNClient::get_page_data(self, item_id)
+    }
+    fn get_user_threads_page(&self, username: &str, page: usize) -> Result<PageData> {
+        HNClient::get_user_threads_page(self, username, page)
+    }
+    fn get_stories_by_tag(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+        numeric_filters: StoryNumericFilters,
+    ) -> Result<Vec<Story>> {
+        HNClient::get_stories_by_tag(self, tag, sort_mode, page, numeric_filters)
+    }
+    fn get_listing_vote_state(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+    ) -> Result<HashMap<u32, VoteData>> {
+        HNClient::get_listing_vote_state(self, tag, sort_mode, page)
+    }
+    fn get_listing_vouch_state(
+        &self,
+        tag: &str,
+        sort_mode: StorySortMode,
+        page: usize,
+    ) -> Result<HashMap<u32, VouchData>> {
+        HNClient::get_listing_vouch_state(self, tag, sort_mode, page)
+    }
+    fn get_matched_stories(&self, query: &str, by_date: bool, page: usize) -> Result<Vec<Story>> {
+        HNClient::get_matched_stories(self, query, by_date, page)
+    }
+    fn login(&self, username: &str, password: &str) -> Result<()> {
+        HNClient::login(self, username, password)
+    }
+    fn current_session_cookie(&self) -> Option<String> {
+        HNClient::current_session_cookie(self)
+    }
+    fn vote(&self, id: u32, auth: &str, new_vote: Option<VoteDirection>) -> Result<()> {
+        HNClient::vote(self, id, auth, new_vote)
+    }
+    fn vouch(&self, id: u32, auth: &str, rescind: bool) -> Result<()> {
+        HNClient::vouch(self, id, auth, rescind)
+    }
+    fn get_vote_data_for_item(&self, item_id: u32) -> Result<Option<VoteData>> {
+        HNClient::get_vote_data_for_item(self, item_id)
+    }
+    fn get_vouch_data_for_item(&self, item_id: u32) -> Result<Option<VouchData>> {
+        HNClient::get_vouch_data_for_item(self, item_id)
+    }
+    fn get_article(&self, url: &str) -> Result<Article> {
+        HNClient::get_article(self, url)
+    }
+}
+
 /// Classify an HN `/login` response body as success or failure.
 ///
 /// HN's `/login` POST behaves as follows:

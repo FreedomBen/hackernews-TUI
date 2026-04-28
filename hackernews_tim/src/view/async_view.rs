@@ -9,7 +9,7 @@ use cursive_async_view::AsyncView;
 
 pub fn construct_comment_view_async(
     siv: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     item_id: u32,
 ) -> impl View {
     AsyncView::new_with_bg_creator(siv, move || Ok(client.get_page_data(item_id)), {
@@ -27,7 +27,7 @@ pub fn construct_comment_view_async(
 
 pub fn construct_threads_view_async(
     siv: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     username: String,
     page: usize,
 ) -> impl View {
@@ -56,7 +56,7 @@ pub fn construct_threads_view_async(
 
 pub fn construct_story_view_async(
     siv: &mut Cursive,
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     tag: &'static str,
     sort_mode: client::StorySortMode,
     page: usize,
@@ -105,7 +105,7 @@ pub fn construct_story_view_async(
 }
 
 pub fn construct_article_view_async(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     siv: &mut Cursive,
     article_url: &str,
 ) -> impl View {
@@ -120,7 +120,7 @@ pub fn construct_article_view_async(
         siv,
         {
             let article_url = article_url.to_owned();
-            move || Ok(client::HNClient::get_article(client, &article_url))
+            move || Ok(client.get_article(&article_url))
         },
         move |result| {
             let err_context = err_context.clone();

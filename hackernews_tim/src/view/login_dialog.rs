@@ -7,11 +7,11 @@ const PASSWORD_ID: &str = "login_dialog_password";
 const STATUS_ID: &str = "login_dialog_status";
 
 /// Build a login dialog that collects a username/password, verifies them
-/// against Hacker News by reusing the live [`HNClient`], and on success
-/// persists the credentials using `storage` (and updates `auth_file` —
-/// either as full credentials or as a keyring pointer file).
+/// against Hacker News through the live [`client::HnApi`] handle, and on
+/// success persists the credentials using `storage` (and updates
+/// `auth_file` — either as full credentials or as a keyring pointer file).
 pub fn get_login_dialog(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     auth_file: PathBuf,
     storage: config::AuthStorage,
 ) -> impl View {

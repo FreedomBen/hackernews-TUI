@@ -242,7 +242,7 @@ impl ScrollViewContainer for ArticleView {
 }
 
 fn construct_article_main_view(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     article: Article,
 ) -> OnEventView<ArticleView> {
     let is_suffix_key = |c: &Event| -> bool {
@@ -355,7 +355,7 @@ fn construct_article_main_view(
 }
 
 /// Construct an article view of an article
-pub fn construct_article_view(client: &'static client::HNClient, article: Article) -> impl View {
+pub fn construct_article_view(client: &'static dyn client::HnApi, article: Article) -> impl View {
     let desc = format!("Article View - {}", article.title);
     let main_view = construct_article_main_view(client, article).full_height();
 
@@ -371,7 +371,7 @@ pub fn construct_article_view(client: &'static client::HNClient, article: Articl
 
 /// Retrieve an article from a given `url` and construct an article view of that article
 pub fn construct_and_add_new_article_view(
-    client: &'static client::HNClient,
+    client: &'static dyn client::HnApi,
     s: &mut Cursive,
     url: &str,
 ) {
