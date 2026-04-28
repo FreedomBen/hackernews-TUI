@@ -198,7 +198,10 @@ impl ViewWrapper for SearchView {
     }
 }
 
-fn construct_search_main_view(client: &'static dyn client::HnApi, cb_sink: CbSink) -> impl View {
+pub fn construct_search_main_view(
+    client: &'static dyn client::HnApi,
+    cb_sink: CbSink,
+) -> impl View {
     let story_view_keymap = config::get_story_view_keymap().clone();
     let search_view_keymap = config::get_search_view_keymap().clone();
 
@@ -374,7 +377,7 @@ fn construct_search_main_view(client: &'static dyn client::HnApi, cb_sink: CbSin
         })
 }
 
-fn construct_search_view(client: &'static dyn client::HnApi, cb_sink: CbSink) -> impl View {
+pub fn construct_search_view(client: &'static dyn client::HnApi, cb_sink: CbSink) -> impl View {
     let main_view = construct_search_main_view(client, cb_sink);
 
     let mut view = LinearLayout::vertical()

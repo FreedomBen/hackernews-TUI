@@ -1,0 +1,43 @@
+---
+source: hackernews_tim/tests/search_view.rs
+expression: harness.screen_text()
+---
+
+ [Y] Hacker News | 1.front_page | 2.story | 3.ask_hn | 4.show_hn | 5.job | 6.threads | search (^S) |
+                                                      Search View
+ Search:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                            Hacker News Terminal UI - made by AOME ©                           [?: help] [back] [quit]

@@ -47,7 +47,7 @@ truth for individual cases.
 - [x] 2.1.3 Add `insta` snapshot library
 - [x] 2.2.1 StoryView tests
 - [x] 2.2.2 CommentView tests
-- [ ] 2.2.3 SearchView tests
+- [x] 2.2.3 SearchView tests
 - [ ] 2.2.4 ArticleView tests
 - [ ] 2.2.5 LinkDialog / HelpView / LoginDialog / find-bar tests
 - [ ] 2.2.6 Global navigation + post-event hook tests
