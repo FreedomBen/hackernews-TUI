@@ -1,8 +1,8 @@
 mod async_view;
 pub mod find_bar;
 mod fn_view_wrapper;
-mod link_dialog;
-mod login_dialog;
+pub mod link_dialog;
+pub mod login_dialog;
 mod result_view;
 mod text_view;
 pub mod traits;

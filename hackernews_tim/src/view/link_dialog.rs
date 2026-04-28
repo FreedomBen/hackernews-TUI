@@ -45,9 +45,22 @@ impl LinkDialog {
             .downcast_mut::<LinkDialogContent>()
             .expect("the help dialog's content should have `LinkDialogContent` type")
     }
+
+    /// Index of the currently-focused link (0-based).
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn focused_index_for_test(&self) -> usize {
+        self.content().get_inner().get_focus_index()
+    }
 }
 
-pub fn get_link_dialog(client: &'static dyn client::HnApi, links: &[String]) -> impl View {
+/// Build the link-dialog main view (without the outer
+/// `max_height`/`max_width` resize wrappers used by [`get_link_dialog`]).
+/// Tests construct this directly so they can name the view and inspect
+/// state through [`LinkDialog::focused_index_for_test`].
+pub fn construct_link_dialog_main_view(
+    client: &'static dyn client::HnApi,
+    links: &[String],
+) -> OnEventView<LinkDialog> {
     let view = LinkDialog::new(links);
     let link_dialog_keymap = config::get_link_dialog_keymap().clone();
 
@@ -99,6 +112,10 @@ pub fn get_link_dialog(client: &'static dyn client::HnApi, links: &[String]) -> 
         .on_pre_event(config::get_global_keymap().open_help_dialog.clone(), |s| {
             s.add_layer(LinkDialog::construct_on_event_help_view())
         })
+}
+
+pub fn get_link_dialog(client: &'static dyn client::HnApi, links: &[String]) -> impl View {
+    construct_link_dialog_main_view(client, links)
         .max_height(32)
         .max_width(64)
 }
