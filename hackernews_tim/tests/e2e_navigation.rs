@@ -26,9 +26,13 @@ use helpers::{spawn_app, AppHandle, SpawnOptions, DEFAULT_WAIT};
 
 const FRONT_PAGE_RENDER_TIMEOUT: Duration = Duration::from_secs(60);
 
-const STORY1_ID: u32 = 91_111_001;
-const STORY2_ID: u32 = 91_111_002;
-const STORY3_ID: u32 = 91_111_003;
+// Use ID 10001 — a real, stable HN item from 2007. The fixture
+// `/v0/item/...json` response is served from `FakeHnServer`, but
+// `get_page_content` (vote-state HTML) still hits real HN; pinning to
+// an existing ID keeps that incidental request from 404-ing.
+const STORY1_ID: u32 = 10001;
+const STORY2_ID: u32 = 10002;
+const STORY3_ID: u32 = 10003;
 
 const STORY1_TITLE: &str = "navigation fixture story one";
 const STORY2_TITLE: &str = "navigation fixture story two";
@@ -194,4 +198,87 @@ fn wait_for_focus_change(handle: &AppHandle, prior: u16) -> u16 {
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+#[test]
+fn drill_into_comments_and_back_to_front_page() {
+    let server = FakeHnServer::start();
+    mount_three_stories(&server);
+
+    // The comment view's `get_page_data` first hits the official
+    // Firebase `/v0/item/{id}.json` route to load the root item.
+    // `kids: []` keeps the test simple — no per-comment Algolia mocks
+    // needed.
+    server.mount_get_json(
+        "/v0/item/10001.json",
+        200,
+        json!({
+            "id": STORY1_ID,
+            "type": "story",
+            "by": "alice",
+            "title": STORY1_TITLE,
+            "url": format!("https://example.com/{STORY1_ID}"),
+            "score": 250,
+            "descendants": 0,
+            "time": 1_700_000_000_u64,
+            "kids": [],
+            "text": "",
+        }),
+    );
+
+    let opts = SpawnOptions::new()
+        .algolia_base(server.algolia_base())
+        .firebase_base(server.firebase_base());
+    let mut handle = spawn_app(opts).expect("spawn_app should succeed");
+
+    dismiss_first_run_prompts(&mut handle);
+
+    handle
+        .wait_for_text(STORY1_TITLE, FRONT_PAGE_RENDER_TIMEOUT)
+        .expect("first fixture story should render on the front page");
+
+    // Sanity check: the focused row is on the first story so Enter
+    // will drill into STORY1_ID (mocked at /v0/item/10001.json).
+    handle
+        .focused_row()
+        .expect("focus must be drawn before Enter dispatches goto_story_comment_view");
+
+    // Enter — `goto_story_comment_view` (StoryViewKeyMap default).
+    handle.send_keys("\r").expect("send Enter");
+
+    // Comment view title bar reads "Comment View - <story title>".
+    handle
+        .wait_for_text(
+            &format!("Comment View - {STORY1_TITLE}"),
+            FRONT_PAGE_RENDER_TIMEOUT,
+        )
+        .expect("comment view header should show the drilled story title");
+
+    // `goto_previous_view` defaults to `Backspace` or `Ctrl-P`. Give the
+    // async comment view a beat to finish wiring its post-event hooks
+    // after the title bar appears, otherwise the back-nav key races the
+    // initial draw and gets swallowed.
+    std::thread::sleep(Duration::from_millis(200));
+    handle.send_keys("\x7f").expect("send Backspace (goto_previous_view)");
+
+    handle
+        .wait_for_text(STORY2_TITLE, DEFAULT_WAIT)
+        .expect("front page (story 2 row) should be visible again after going back");
+
+    // The other fixture rows should still be present — the front
+    // page was restored, not just the focused row.
+    let final_screen = handle.screen();
+    for title in [STORY2_TITLE, STORY3_TITLE] {
+        assert!(
+            final_screen.contains(title),
+            "expected {title:?} on the restored front page; saw:\n{final_screen}"
+        );
+    }
+    assert!(
+        !final_screen.contains("Comment View - "),
+        "comment view title should be gone after Backspace; saw:\n{final_screen}"
+    );
+
+    let status = handle.shutdown().expect("binary should exit cleanly");
+    assert!(status.success(), "expected success exit, got {status:?}");
 }
