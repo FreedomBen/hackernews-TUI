@@ -379,6 +379,7 @@ fn construct_search_view(client: &'static client::HNClient, cb_sink: CbSink) -> 
 
     let mut view = LinearLayout::vertical()
         .child(utils::construct_view_title_bar_with_nav(
+            client,
             "Search View",
             utils::NavTarget::Search,
         ))
@@ -388,7 +389,13 @@ fn construct_search_view(client: &'static client::HNClient, cb_sink: CbSink) -> 
     view.set_focus_index(1)
         .unwrap_or(EventResult::Consumed(None));
 
-    view
+    OnEventView::new(view)
+        .on_event_inner(Event::Char('k'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Up)))
+        })
+        .on_event_inner(Event::Char('j'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Down)))
+        })
 }
 
 pub fn construct_and_add_new_search_view(s: &mut Cursive, client: &'static client::HNClient) {

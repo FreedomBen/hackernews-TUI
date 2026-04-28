@@ -619,15 +619,27 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
                 siv.quit();
             }))
         })
-        // comment navigation shortcuts
+        // comment navigation shortcuts. Returning `None` when the cursor
+        // is already at the top/bottom lets the event bubble up to the
+        // outer `LinearLayout::vertical` so it can shift focus into the
+        // nav strip or footer.
         .on_pre_event_inner(comment_view_keymap.prev_comment, |s, _| {
-            s.set_focus_index(
-                s.find_next_visible_item(s.get_focus_index(), NavigationDirection::Previous),
-            )
+            let current = s.get_focus_index();
+            let target = s.find_next_visible_item(current, NavigationDirection::Previous);
+            if target == current {
+                None
+            } else {
+                s.set_focus_index(target)
+            }
         })
         .on_pre_event_inner(comment_view_keymap.next_comment, |s, _| {
-            let next_id = s.find_next_visible_item(s.get_focus_index(), NavigationDirection::Next);
-            s.set_focus_index(next_id)
+            let current = s.get_focus_index();
+            let target = s.find_next_visible_item(current, NavigationDirection::Next);
+            if target == current || target >= s.len() {
+                None
+            } else {
+                s.set_focus_index(target)
+            }
         })
         .on_pre_event_inner(comment_view_keymap.next_leq_level_comment, move |s, _| {
             let id = s.get_focus_index();
@@ -811,13 +823,25 @@ pub fn construct_comment_view(
     let main_view = construct_comment_main_view(client, data);
 
     let mut view = LinearLayout::vertical()
-        .child(utils::construct_view_title_bar_with_nav(&title, nav))
+        .child(utils::construct_view_title_bar_with_nav(
+            client, &title, nav,
+        ))
         .child(main_view)
         .child(utils::construct_footer_view::<CommentView>());
     view.set_focus_index(1)
         .unwrap_or(EventResult::Consumed(None));
 
-    view
+    // Vim-style cross-row focus: translate `k`/`j` into `Up`/`Down`
+    // when the inner main view didn't consume them (cursor at the top
+    // of the comment list, etc.) so the outer layout can shift focus
+    // to the nav strip or footer.
+    OnEventView::new(view)
+        .on_event_inner(Event::Char('k'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Up)))
+        })
+        .on_event_inner(Event::Char('j'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Down)))
+        })
 }
 
 /// Retrieve comments in a Hacker News item and construct a comment view of that item

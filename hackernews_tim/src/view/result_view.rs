@@ -54,7 +54,10 @@ impl ErrorView {
     pub fn new(err: anyhow::Error) -> Self {
         Self {
             view: LinearLayout::vertical()
-                .child(utils::construct_view_title_bar("Error View"))
+                .child(utils::construct_view_title_bar(
+                    crate::client::get_client(),
+                    "Error View",
+                ))
                 .child(Dialog::around(
                     TextView::new(format!("Error: {err:?}"))
                         .scrollable()

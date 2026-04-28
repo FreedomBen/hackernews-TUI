@@ -661,8 +661,12 @@ pub fn construct_story_main_view(
     .on_scroll_events()
 }
 
-fn get_story_view_title_bar(tag: &'static str, sort_mode: client::StorySortMode) -> impl View {
-    utils::construct_story_view_top_bar(tag, sort_mode)
+fn get_story_view_title_bar(
+    client: &'static client::HNClient,
+    tag: &'static str,
+    sort_mode: client::StorySortMode,
+) -> impl View {
+    utils::construct_story_view_top_bar(client, tag, sort_mode)
 }
 
 /// Construct a story view given a list of stories.
@@ -693,7 +697,7 @@ pub fn construct_story_view(
     .full_height();
 
     let mut view = LinearLayout::vertical()
-        .child(get_story_view_title_bar(tag, sort_mode))
+        .child(get_story_view_title_bar(client, tag, sort_mode))
         .child(main_view)
         .child(utils::construct_footer_view::<StoryView>());
     view.set_focus_index(1)
@@ -844,6 +848,17 @@ pub fn construct_story_view(
                     true,
                 );
             }))
+        })
+        // Vim-style cross-row focus: when the inner main view doesn't
+        // consume `k`/`j` (e.g. the cursor is at the top of the story
+        // list and `prev_story` has bubbled up), translate them into
+        // `Up`/`Down` so the outer `LinearLayout::vertical` shifts focus
+        // to the nav strip or footer.
+        .on_event_inner(Event::Char('k'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Up)))
+        })
+        .on_event_inner(Event::Char('j'), |inner, _| {
+            Some(inner.on_event(Event::Key(Key::Down)))
         })
 }
 

@@ -1669,6 +1669,14 @@ pub fn init_client() -> &'static HNClient {
     install_client(client)
 }
 
+/// Returns the global HN client installed at startup. Panics if called
+/// before [`init_client`] / [`install_client`].
+pub fn get_client() -> &'static HNClient {
+    CLIENT
+        .get()
+        .expect("HN client has not been initialized yet")
+}
+
 /// Seal an already-built [`HNClient`] into the global slot and return a
 /// `'static` reference. Used when the client is built before the global
 /// config is sealed (e.g. so the startup login request can happen before the

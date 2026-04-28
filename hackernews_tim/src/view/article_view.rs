@@ -360,7 +360,7 @@ pub fn construct_article_view(client: &'static client::HNClient, article: Articl
     let main_view = construct_article_main_view(client, article).full_height();
 
     let mut view = LinearLayout::vertical()
-        .child(utils::construct_view_title_bar(&desc))
+        .child(utils::construct_view_title_bar(client, &desc))
         .child(main_view)
         .child(utils::construct_footer_view::<ArticleView>());
     view.set_focus_index(1)
