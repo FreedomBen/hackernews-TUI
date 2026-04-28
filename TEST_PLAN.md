@@ -34,7 +34,7 @@ truth for individual cases.
 - [x] 1.3 `config/keybindings.rs` — typed key parsing
 - [x] 1.4 `parser/html.rs` — HN comment HTML rendering
 - [x] 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
-- [ ] 1.6 `utils.rs` — formatting helpers
+- [x] 1.6 `utils.rs` — formatting helpers
 - [ ] 1.7 `reply_editor.rs` — scaffold I/O
 - [ ] 1.8 View-module helpers (lift, then test)
 - [ ] 1.9 Doctests (optional, low priority)
@@ -151,7 +151,7 @@ tested.
 | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `get_time_offset_in_text(offset)` (private)    | Returns `"X seconds"`, `"X minutes"`, `"X hours"`, `"X days"`, `"X months"`, `"X years"` at boundary values; pluralization via `format_plural`. (This is the pure inner half — `get_elapsed_time_as_text` reads `SystemTime::now()` and is not pure; one smoke test for the now-relative path is enough.) |
 | `from_day_offset_to_time_offset_in_secs(d)`    | `0 → 0`, `1 → 86400`, `7 → 604800`.                                                     |
-| `shorten_url(url)`                             | Strips scheme + `www.`; truncates per current rule.                                     |
+| `shorten_url(url)`                             | Returns input unchanged when length ≤ 50; otherwise renders `first40 + "..." + last10`. (The function does not strip the scheme or `www.` — only truncates.) |
 | `decode_html("&amp;&lt;&gt;&#x27;")`           | Returns `&<>'`.                                                                         |
 | `combine_styled_strings([a, b])`               | Concatenation preserves spans of each input.                                            |
 
