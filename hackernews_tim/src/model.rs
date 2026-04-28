@@ -48,6 +48,11 @@ pub struct Comment {
     /// user flags to drop the item's rank, which may or may not also
     /// be dead).
     pub flagged: bool,
+    /// Score in HN points. HN only renders `<span class="score">` on the
+    /// logged-in viewer's own comments, so this is `Some` only for own
+    /// comments fetched via the authenticated HTML path; the Algolia and
+    /// Firebase paths always leave it `None`.
+    pub points: Option<u32>,
 }
 
 /// A Hacker News page data.
@@ -148,6 +153,20 @@ fn own_item_prefix(author: &str, me: Option<&str>, style: config::Style) -> Styl
     }
 }
 
+/// HN renders `<span class="score">N points</span>` on the viewer's own
+/// comments. Returns the matching " by"-suffixed byline fragment, or an
+/// empty styled string when the score is unknown. The trailing " by " is
+/// included because the username follows immediately.
+fn comment_points_prefix(points: Option<u32>, style: config::Style) -> StyledString {
+    match points {
+        Some(n) => {
+            let unit = if n == 1 { "point" } else { "points" };
+            StyledString::styled(format!("{n} {unit} by "), style)
+        }
+        None => StyledString::new(),
+    }
+}
+
 /// Mirrors HN's `[flagged]` / `[dead]` badges on the byline. Either, both,
 /// or neither can be present — HN orders them `[flagged] [dead]`, and we
 /// do the same. Returns an empty styled string for plain items.
@@ -235,6 +254,7 @@ impl From<Comment> for HnItem {
         let metadata = utils::combine_styled_strings([
             status_prefix(comment.flagged, comment.dead, component_style.metadata),
             own_item_prefix(&comment.author, me, component_style.own_item_indicator),
+            comment_points_prefix(comment.points, component_style.metadata),
             StyledString::styled(comment.author, username_style),
             StyledString::styled(
                 format!(" {} ago ", utils::get_elapsed_time_as_text(comment.time)),
@@ -429,6 +449,31 @@ mod tests {
     #[test]
     fn own_item_prefix_empty_when_logged_out() {
         let s = own_item_prefix("freedomben", None, config::Style::default());
+        assert_eq!(s.source(), "");
+    }
+
+    #[test]
+    fn comment_points_prefix_uses_plural_for_zero_and_many() {
+        let style = config::Style::default();
+        assert_eq!(
+            comment_points_prefix(Some(0), style).source(),
+            "0 points by "
+        );
+        assert_eq!(
+            comment_points_prefix(Some(42), style).source(),
+            "42 points by "
+        );
+    }
+
+    #[test]
+    fn comment_points_prefix_uses_singular_for_one() {
+        let s = comment_points_prefix(Some(1), config::Style::default());
+        assert_eq!(s.source(), "1 point by ");
+    }
+
+    #[test]
+    fn comment_points_prefix_empty_when_none() {
+        let s = comment_points_prefix(None, config::Style::default());
         assert_eq!(s.source(), "");
     }
 }

@@ -183,6 +183,7 @@ impl From<CommentResponse> for Vec<Comment> {
                 content: decode_html(&c.text.unwrap_or_default()),
                 dead: c.dead,
                 flagged: c.flagged,
+                points: None,
             }
         };
 
@@ -267,6 +268,7 @@ impl UserCommentResponse {
             content: decode_html(&content),
             dead: self.dead,
             flagged: self.flagged,
+            points: None,
         })
     }
 }

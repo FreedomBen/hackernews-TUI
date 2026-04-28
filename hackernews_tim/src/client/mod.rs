@@ -252,6 +252,10 @@ impl HNClient {
                 content: text,
                 dead: item.dead,
                 flagged: item.flagged,
+                // The Firebase item endpoint doesn't expose a per-comment
+                // score; that field is HTML-only. The HTML path overrides
+                // this for the viewer's own root-level comment.
+                points: None,
             }
             .into(),
             typ => {
@@ -1316,6 +1320,11 @@ fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
     // still renders, so we surface those flags to the view layer.
     let dead_rg = regex::Regex::new(r#"<span id="unv_[^"]*"></span>[^<]*\[dead\]"#).unwrap();
     let flagged_rg = regex::Regex::new(r#"<span id="unv_[^"]*"></span>[^<]*\[flagged\]"#).unwrap();
+    // HN renders `<span class="score" id="score_<id>">N points?</span>` only
+    // on the logged-in viewer's own comments — that's the only place a per-
+    // comment score is exposed. Captures the bare integer.
+    let score_rg =
+        regex::Regex::new(r#"<span class="score" id="score_\d+">(\d+) points?</span>"#).unwrap();
 
     let anchors: Vec<(u32, usize, usize)> = anchor_rg
         .captures_iter(page_content)
@@ -1364,6 +1373,10 @@ fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
 
         let dead = dead_rg.is_match(body);
         let flagged = flagged_rg.is_match(body);
+        let points = score_rg
+            .captures(body)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u32>().ok());
 
         comments.push(Comment {
             id,
@@ -1374,6 +1387,7 @@ fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
             content,
             dead,
             flagged,
+            points,
         });
     }
 
@@ -2353,6 +2367,57 @@ mod tests {
     #[test]
     fn parse_comments_returns_empty_when_page_has_no_comments() {
         assert!(parse_comments_from_content("<html><body></body></html>").is_empty());
+    }
+
+    #[test]
+    fn parse_comments_extracts_points_for_own_comment() {
+        // HN renders a `<span class="score">` only on the viewer's own
+        // comments. The authenticated fixture has it on row 47891300 ("1
+        // point"); not-own rows in the same fixture must stay `None`.
+        let comments = parse_comments_from_content(ITEM_PAGE_AUTHENTICATED_HTML);
+        let own = comments
+            .iter()
+            .find(|c| c.id == 47891300)
+            .expect("own comment row should be parsed");
+        assert_eq!(own.points, Some(1));
+        let other = comments
+            .iter()
+            .find(|c| c.id == 47890764)
+            .expect("not-own comment row should be parsed");
+        assert_eq!(other.points, None);
+    }
+
+    #[test]
+    fn parse_comments_handles_plural_points() {
+        // The score span uses "N points" for everything but 1 ("1 point").
+        // Make sure the parser strips the trailing 's' off the unit.
+        let html = concat!(
+            r#"<tr class="athing comtr" id="9001">"#,
+            r#"<td class="ind" indent="0"></td>"#,
+            r#"<span class="score" id="score_9001">42 points</span>"#,
+            r#" by <a href="user?id=alice" class="hnuser">alice</a>"#,
+            r#" <span class="age" title="2025-01-01T00:00:00 1735689600"></span>"#,
+            r#"<div class="commtext c00">hi</div>"#,
+            r#"</tr>"#,
+        );
+        let comments = parse_comments_from_content(html);
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].points, Some(42));
+    }
+
+    #[test]
+    fn parse_comments_leaves_points_none_when_score_missing() {
+        let html = concat!(
+            r#"<tr class="athing comtr" id="1">"#,
+            r#"<td class="ind" indent="0"></td>"#,
+            r#"<a href="user?id=alice" class="hnuser">alice</a>"#,
+            r#"<span class="age" title="2025-01-01T00:00:00 1735689600"></span>"#,
+            r#"<div class="commtext c00">hi</div>"#,
+            r#"</tr>"#,
+        );
+        let comments = parse_comments_from_content(html);
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].points, None);
     }
 
     // Captured from an authenticated session on `/item?id=47882645`. Covers
