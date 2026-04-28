@@ -184,7 +184,7 @@ impl From<CommentResponse> for Vec<Comment> {
                 dead: c.dead,
                 flagged: c.flagged,
                 points: None,
-                parent_story_url: None,
+                parent_story_id: None,
             }
         };
 
@@ -230,13 +230,13 @@ impl UserCommentResponse {
         self.id
     }
 
-    /// Parent thread URL on news.ycombinator.com, propagated to every
-    /// comment in the threads-view subtree (root + replies) so a bare
-    /// `o`/`O` from any focused item jumps back to the parent thread.
-    /// Returns `None` when the parent story id isn't known.
-    pub fn story_url(&self) -> Option<String> {
+    /// HN id of the parent story for this comment hit, propagated to
+    /// every comment in the threads-view subtree (root + replies) so a
+    /// bare `o`/`O` from any focused item jumps back to the parent
+    /// thread. Returns `None` when Algolia didn't include `story_id` on
+    /// the hit.
+    pub fn story_id(&self) -> Option<u32> {
         self.story_id
-            .map(|sid| format!("{}/item?id={sid}", super::HN_HOST_URL))
     }
 
     /// HTML snippet linking back to the parent thread, used as a header
@@ -265,7 +265,7 @@ impl UserCommentResponse {
     /// fails — we still want the user to see their own comment, just
     /// without the reply tree.
     pub fn into_root_comment(self) -> Option<Comment> {
-        let parent_story_url = self.story_url();
+        let parent_story_id = self.story_id();
         let header = self.story_header_html();
         let author = self.author?;
         let text = self.comment_text?;
@@ -280,7 +280,7 @@ impl UserCommentResponse {
             dead: self.dead,
             flagged: self.flagged,
             points: None,
-            parent_story_url,
+            parent_story_id,
         })
     }
 }
@@ -338,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn user_comment_response_story_url_uses_story_id() {
+    fn user_comment_response_story_id_returns_story_id_when_present() {
         let json = r#"{
             "hits": [
                 {
@@ -353,14 +353,11 @@ mod tests {
         }"#;
         let parsed: UserCommentsResponse = serde_json::from_str(json).unwrap();
         let hit = &parsed.hits[0];
-        assert_eq!(
-            hit.story_url(),
-            Some(format!("{}/item?id=4242", super::HN_HOST_URL))
-        );
+        assert_eq!(hit.story_id(), Some(4242));
     }
 
     #[test]
-    fn user_comment_response_story_url_none_when_story_id_missing() {
+    fn user_comment_response_story_id_none_when_field_missing() {
         let json = r#"{
             "hits": [
                 {
@@ -373,11 +370,11 @@ mod tests {
         }"#;
         let parsed: UserCommentsResponse = serde_json::from_str(json).unwrap();
         let hit = &parsed.hits[0];
-        assert!(hit.story_url().is_none());
+        assert!(hit.story_id().is_none());
     }
 
     #[test]
-    fn into_root_comment_populates_parent_story_url() {
+    fn into_root_comment_populates_parent_story_id() {
         let json = r#"{
             "hits": [
                 {
@@ -392,8 +389,7 @@ mod tests {
         }"#;
         let mut parsed: UserCommentsResponse = serde_json::from_str(json).unwrap();
         let hit = parsed.hits.remove(0);
-        let expected = hit.story_url();
         let comment = hit.into_root_comment().unwrap();
-        assert_eq!(comment.parent_story_url, expected);
+        assert_eq!(comment.parent_story_id, Some(4242));
     }
 }

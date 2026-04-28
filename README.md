@@ -11,7 +11,7 @@ Hackernews-TIM is a fork of [`hackernews-TUI`](https://github.com/aome510/hacker
 - **Interactive HN login** with a first-run prompt, cached session cookie, and in-app login dialog. Logged-in username, karma, and profile topcolor appear in title bars; your own stories and comments are marked with an orange `*`, and your own comments also show their point count on the byline.
 - **Full voting support**: upvote/downvote stories from the story list, downvote comments, and vouch dead/flagged items. Vote state is pre-fetched so arrows render on every page.
 - **Reply and edit flows**: reply to stories and comments via your `$EDITOR`; edit your own comments in place. Aborted replies and edits report an explicit message instead of silently dropping.
-- **In-TUI threads view** (`F6`): browse your own HN comments inside the app, with replies expanded under each one. Each entry is prefixed with a `re: <story title>` link, and a bare `o` / `O` from any focused item — the user's own comment or any reply underneath it — jumps you back to the parent thread.
+- **In-TUI threads view** (`F6`): browse your own HN comments inside the app, with replies expanded under each one. Each entry is prefixed with a `re: <story title>` link, and a bare `o` / `O` from any focused item — the user's own comment or any reply underneath it — opens the parent thread inside the TUI as a new comment view.
 - **Global nav strip** on every top-level view: a focusable `[Y] Hacker News | 1.front_page | … | search (^S) | 6.threads` row in the title bar, with the active view highlighted. `Enter` on a button switches views; `j` / `k` and arrow keys move focus across the title bar / main view / footer.
 - **Dead and flagged content is visible** when authenticated, badged with `[dead]` / `[flagged]`, and rendered faded. Honors your HN `showdead` profile setting.
 - **Find-on-page** (`/`, `n`, `N`) across comment, story, article, and search views. In the comment view, `n` / `N` (and `p`) double as sibling-prev/next navigation when no find session is active.
@@ -284,8 +284,8 @@ For more information about configuring the application's key mappings or definin
 | `open_article_in_article_view` | Open in article view the discussed article                                      | `A`              |
 | `open_story_in_browser`        | Open in browser the discussed story                                             | `s`              |
 | `open_comment_in_browser`      | Open in browser the focused comment                                                  | `c`              |
-| `open_link_in_browser`         | Open in browser the {link_id}-th link in the focused comment (bare `o` defaults to link 1, or to the parent thread in the threads view) | `[{link_id}] o`  |
-| `open_link_in_article_view`    | Open in article view the {link_id}-th link in the focused comment (bare `O` defaults to link 1, or to the parent thread in the threads view) | `[{link_id}] O`  |
+| `open_link_in_browser`         | Open in browser the {link_id}-th link in the focused comment (bare `o` defaults to link 1, or opens the parent thread in the TUI when in the threads view) | `[{link_id}] o`  |
+| `open_link_in_article_view`    | Open in article view the {link_id}-th link in the focused comment (bare `O` defaults to link 1, or opens the parent thread in the TUI when in the threads view) | `[{link_id}] O`  |
 
 #### Search View shortcuts
 
@@ -359,16 +359,43 @@ Users can authenticate their Hacker News account in any of three ways:
    ```
 
 By default, the authentication file lives next to `config.toml`; pass `-a` /
-`--auth` to use a different path. Credentials are currently stored in
-plaintext TOML — protect the file with filesystem permissions and don't
-check it into version control.
+`--auth` to use a different path. Two storage backends are supported:
 
-The auth file also carries a `session` field (always written, with an
-explanatory comment) holding HN's `user=` cookie value. Subsequent runs
-reuse it to restore the session instead of re-POSTing to `/login`, which is
-what Hacker News throttles with a CAPTCHA after repeated attempts. If the
-cached session expires, the app falls back to the stored password and
-refreshes the cookie automatically.
+- **File** (default, legacy behavior): credentials are written as plaintext
+  TOML at the auth path. On Unix the file is mode `0600` so other local
+  users can't read it. Don't check this file into version control.
+- **Keyring**: the password (and cached session cookie) live in the OS
+  credential manager — macOS Keychain, Windows Credential Manager, or
+  Linux Secret Service (gnome-keyring / KWallet). The file at the auth
+  path becomes a small pointer carrying just `storage = "keyring"` and
+  `username = "..."`. Service name is `hackernews-tim`; the password is
+  keyed by the HN username, and the session cookie by
+  `<username>:session`.
+
+The first-run prompt offers both choices (defaulting to file). The keyring
+backend is probed up front, so headless systems with no Secret Service
+available cleanly fall back to file storage rather than committing to a
+backend that won't work.
+
+To switch backends after the fact, run:
+
+```sh
+hackernews_tim --migrate-auth keyring   # move the secrets into the OS keyring
+hackernews_tim --migrate-auth file      # move them back to plaintext TOML
+```
+
+Migration reads the current credentials, writes them to the new backend,
+and (when migrating away from the keyring) deletes the now-orphaned
+keyring entries. Running `--migrate-auth` against a backend that's
+already in use is a no-op.
+
+For file-backed auth, the file also carries a `session` field (always
+written, with an explanatory comment) holding HN's `user=` cookie value.
+Subsequent runs reuse it to restore the session instead of re-POSTing to
+`/login`, which is what Hacker News throttles with a CAPTCHA after repeated
+attempts. If the cached session expires, the app falls back to the stored
+password and refreshes the cookie automatically. Keyring-backed auth
+caches the same cookie under the `<username>:session` keyring entry.
 
 If the TUI gets stuck on the CAPTCHA (HN served one before a first
 successful login ever completed), you can seed the session from a browser:
@@ -376,10 +403,12 @@ successful login ever completed), you can seed the session from a browser:
 1. Sign in to <https://news.ycombinator.com/> in a browser.
 2. Open DevTools → Application/Storage → Cookies → `https://news.ycombinator.com`.
 3. Copy the value of the cookie named `user` (looks like `yourname&abcdef0123...`).
-4. Paste it between the quotes on the `session = ""` line in `hn-auth.toml`.
+4. Paste it between the quotes on the `session = ""` line in `hn-auth.toml`
+   (file storage), or store it under the `<username>:session` account in
+   your OS credential manager (keyring storage).
 
-Clear the line (`session = ""`) at any time to force a fresh login on the
-next run.
+Clear the line (`session = ""`) — or delete the matching keyring entry —
+at any time to force a fresh login on the next run.
 
 ### Dead and flagged comments and stories
 

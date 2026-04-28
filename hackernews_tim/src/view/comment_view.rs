@@ -744,18 +744,23 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
         // open external link shortcuts. Bare `o`/`O` (no numeric prefix)
         // opens link 1, so pressing `o` on a focused comment opens its
         // first link — that's how the threads view's `re: parent thread`
-        // header is documented to work. In the threads view, every item
-        // (root comment and replies) carries `parent_story_url`; when the
-        // buffer is empty we open that directly so a bare `o`/`O` jumps
-        // back to the parent thread regardless of which item is focused
-        // and regardless of whether the focused item has any links of
-        // its own.
-        .on_pre_event_inner(comment_view_keymap.open_link_in_browser, |s, _| {
+        // header is documented to work.
+        //
+        // In the threads view, every item (root comment and replies)
+        // carries `parent_story_id`. With an empty raw_command we route
+        // both `o` and `O` to an in-TUI comment view of the parent
+        // thread instead of falling through to browser/article-reader:
+        // - the article reader can't render an HN `/item` page (it
+        //   comes out blank), and
+        // - a TUI navigation gives instant in-app feedback regardless
+        //   of which item — root or reply — is focused.
+        .on_pre_event_inner(comment_view_keymap.open_link_in_browser, move |s, _| {
             let id = s.get_focus_index();
             if s.raw_command.is_empty() {
-                if let Some(url) = s.items[id].parent_story_url.clone() {
-                    utils::open_url_in_browser(&url);
-                    return Some(EventResult::Consumed(None));
+                if let Some(sid) = s.items[id].parent_story_id {
+                    return Some(EventResult::with_cb(move |siv| {
+                        construct_and_add_new_comment_view(siv, client, sid, false);
+                    }));
                 }
             }
             let num = parse_link_index(&s.raw_command)?;
@@ -767,9 +772,9 @@ fn construct_comment_main_view(client: &'static client::HNClient, data: PageData
             move |s, _| {
                 let id = s.get_focus_index();
                 if s.raw_command.is_empty() {
-                    if let Some(url) = s.items[id].parent_story_url.clone() {
+                    if let Some(sid) = s.items[id].parent_story_id {
                         return Some(EventResult::with_cb(move |siv| {
-                            article_view::construct_and_add_new_article_view(client, siv, &url)
+                            construct_and_add_new_comment_view(siv, client, sid, false);
                         }));
                     }
                 }

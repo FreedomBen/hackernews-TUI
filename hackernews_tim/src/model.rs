@@ -53,11 +53,13 @@ pub struct Comment {
     /// comments fetched via the authenticated HTML path; the Algolia and
     /// Firebase paths always leave it `None`.
     pub points: Option<u32>,
-    /// Parent story URL on news.ycombinator.com. Set by the threads view
-    /// on every comment in each user-comment subtree (root comment plus
-    /// replies) so a bare `o`/`O` from any focused item jumps back to the
-    /// parent thread. `None` outside the threads view.
-    pub parent_story_url: Option<String>,
+    /// HN id of the parent story for this comment. Set by the threads
+    /// view on every comment in each user-comment subtree (root comment
+    /// plus replies) so a bare `o`/`O` from any focused item jumps to
+    /// the parent thread — the comment view dispatches the keypress to
+    /// an in-TUI navigation when this is `Some`. `None` outside the
+    /// threads view.
+    pub parent_story_id: Option<u32>,
 }
 
 /// A Hacker News page data.
@@ -129,12 +131,12 @@ pub struct HnItem {
     pub author: Option<String>,
     text: StyledString,
     minimized_text: StyledString,
-    /// Parent story URL on news.ycombinator.com. Populated by the threads
-    /// view on every item in each user-comment subtree so a bare `o`/`O`
-    /// jumps back to the parent thread regardless of which item (root or
-    /// reply) is focused. `None` for items not constructed by the threads
-    /// view path.
-    pub parent_story_url: Option<String>,
+    /// HN id of the parent story. Populated by the threads view on every
+    /// item in each user-comment subtree so a bare `o`/`O` jumps back to
+    /// the parent thread regardless of which item (root or reply) is
+    /// focused. `None` for items not constructed by the threads view
+    /// path.
+    pub parent_story_id: Option<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +244,7 @@ impl From<Story> for HnItem {
             author: Some(story.author.clone()),
             text,
             minimized_text,
-            parent_story_url: None,
+            parent_story_id: None,
         }
     }
 }
@@ -303,7 +305,7 @@ impl From<Comment> for HnItem {
             author: Some(author),
             text,
             minimized_text,
-            parent_story_url: comment.parent_story_url,
+            parent_story_id: comment.parent_story_id,
         }
     }
 }
@@ -396,7 +398,7 @@ impl HnItem {
             author: None,
             text: text.clone(),
             minimized_text: text,
-            parent_story_url: None,
+            parent_story_id: None,
         }
     }
 
