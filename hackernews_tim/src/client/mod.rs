@@ -30,17 +30,19 @@ pub const HN_HOST_URL: &str = "https://news.ycombinator.com";
 /// [`hn_listing_pages_for_tui_page`].
 const HN_LISTING_PAGE_SIZE: usize = 30;
 
-/// Read the Algolia / Firebase base URLs, applying the e2e-only
-/// `HN_ALGOLIA_BASE` and `HN_FIREBASE_BASE` env-var overrides
-/// (TEST_PLAN.md §3.1.2). Both fall back to the production constants.
-/// Values are stored as instance fields on [`HNClient`] so a single
-/// binary can't split requests between an override and the real host.
-fn default_bases() -> (String, String) {
-    let algolia = std::env::var("HN_ALGOLIA_BASE")
-        .unwrap_or_else(|_| HN_ALGOLIA_PREFIX.to_string());
-    let firebase = std::env::var("HN_FIREBASE_BASE")
-        .unwrap_or_else(|_| HN_OFFICIAL_PREFIX.to_string());
-    (algolia, firebase)
+/// Read the Algolia / Firebase / news.ycombinator.com base URLs,
+/// applying the e2e-only `HN_ALGOLIA_BASE`, `HN_FIREBASE_BASE`, and
+/// `HN_NEWS_BASE` env-var overrides (TEST_PLAN.md §3.1.2). All three
+/// fall back to the production constants. Values are stored as
+/// instance fields on [`HNClient`] so a single binary can't split
+/// requests between an override and the real host.
+fn default_bases() -> (String, String, String) {
+    let algolia =
+        std::env::var("HN_ALGOLIA_BASE").unwrap_or_else(|_| HN_ALGOLIA_PREFIX.to_string());
+    let firebase =
+        std::env::var("HN_FIREBASE_BASE").unwrap_or_else(|_| HN_OFFICIAL_PREFIX.to_string());
+    let news = std::env::var("HN_NEWS_BASE").unwrap_or_else(|_| HN_HOST_URL.to_string());
+    (algolia, firebase, news)
 }
 
 static CLIENT: once_cell::sync::OnceCell<HNClient> = once_cell::sync::OnceCell::new();
@@ -122,6 +124,10 @@ pub struct HNClient {
     /// `https://hacker-news.firebaseio.com/v0`. Overridable via
     /// `HN_FIREBASE_BASE` for e2e tests (§3.1.2).
     firebase_base: String,
+    /// Base URL for the user-facing HN host (login, vote, vouch,
+    /// reply, profile-page scraping), e.g. `https://news.ycombinator.com`.
+    /// Overridable via `HN_NEWS_BASE` for e2e tests (§3.1.2).
+    news_base: String,
 }
 
 /// A macro to log the runtime of an expression
@@ -146,13 +152,14 @@ impl HNClient {
     /// Create a new Hacker News Client with an explicit timeout (in seconds).
     /// Useful during startup when the global config has not been sealed yet.
     pub fn with_timeout(timeout: u64) -> Result<HNClient> {
-        let (algolia_base, firebase_base) = default_bases();
+        let (algolia_base, firebase_base, news_base) = default_bases();
         Ok(HNClient {
             client: ureq::AgentBuilder::new()
                 .timeout(std::time::Duration::from_secs(timeout))
                 .build(),
             algolia_base,
             firebase_base,
+            news_base,
         })
     }
 
@@ -162,8 +169,9 @@ impl HNClient {
     /// with a CAPTCHA). If the cookie parse fails the client is still
     /// returned — the caller will fall back to a password login.
     pub fn with_cached_session(timeout: u64, session: &str) -> Result<HNClient> {
+        let (algolia_base, firebase_base, news_base) = default_bases();
         let mut store = cookie_store::CookieStore::default();
-        if let Ok(url) = url::Url::parse(HN_HOST_URL) {
+        if let Ok(url) = url::Url::parse(&news_base) {
             // Give the cookie an explicit Max-Age so the store doesn't
             // discard it as a session-only cookie when it's re-parsed.
             let cookie_str = format!("user={session}; Path=/; Max-Age=31536000");
@@ -171,7 +179,6 @@ impl HNClient {
                 warn!("failed to load cached HN session cookie: {err}");
             }
         }
-        let (algolia_base, firebase_base) = default_bases();
         Ok(HNClient {
             client: ureq::AgentBuilder::new()
                 .timeout(std::time::Duration::from_secs(timeout))
@@ -179,6 +186,7 @@ impl HNClient {
                 .build(),
             algolia_base,
             firebase_base,
+            news_base,
         })
     }
 
@@ -188,7 +196,7 @@ impl HNClient {
     /// attached. Returns `false` on any network/parse error — the caller
     /// should treat that the same as an expired cookie.
     pub fn verify_session(&self) -> bool {
-        let url = format!("{HN_HOST_URL}/news");
+        let url = format!("{}/news", self.news_base);
         match self.client.get(&url).call() {
             Ok(resp) => match resp.into_string() {
                 Ok(body) => body.contains("href=\"logout"),
@@ -208,7 +216,7 @@ impl HNClient {
     /// client's cookie jar, if any. Called after a successful login (or
     /// session verification) so the caller can persist the latest cookie.
     pub fn current_session_cookie(&self) -> Option<String> {
-        let url = url::Url::parse(HN_HOST_URL).ok()?;
+        let url = url::Url::parse(&self.news_base).ok()?;
         let domain = url.host_str()?;
         self.client
             .cookie_store()
@@ -544,7 +552,7 @@ impl HNClient {
         drop(sender);
 
         let title = format!("Threads — {username}");
-        let url = format!("{HN_HOST_URL}/threads?id={username}");
+        let url = format!("{}/threads?id={username}", self.news_base);
 
         let header_style = config::get_config_theme().component_style.username;
         let mut header_text = StyledString::styled(title.clone(), header_style);
@@ -588,7 +596,8 @@ impl HNClient {
 
         let mut map: HashMap<u32, u32> = HashMap::new();
         let mut url = format!(
-            "{HN_HOST_URL}/threads?id={username}{}",
+            "{}/threads?id={username}{}",
+            self.news_base,
             showdead_query_suffix("&")
         );
 
@@ -609,7 +618,7 @@ impl HNClient {
             match morelink_rg.captures(&body) {
                 Some(cap) => {
                     let next = cap.name("link").unwrap().as_str().replace("&amp;", "&");
-                    url = format!("{HN_HOST_URL}/{next}");
+                    url = format!("{}/{next}", self.news_base);
                 }
                 None => break,
             }
@@ -819,7 +828,7 @@ impl HNClient {
 
         let res = self
             .client
-            .post(&format!("{HN_HOST_URL}/login"))
+            .post(&format!("{}/login", self.news_base))
             .set("mode", "no-cors")
             .set("credentials", "include")
             .set("Access-Control-Allow-Origin", "*")
@@ -834,7 +843,8 @@ impl HNClient {
         let morelink_rg = regex::Regex::new("<a.*?href='(?P<link>.*?)'.*class='morelink'.*?>")?;
 
         let url = format!(
-            "{HN_HOST_URL}/item?id={item_id}{}",
+            "{}/item?id={item_id}{}",
+            self.news_base,
             showdead_query_suffix("&")
         );
         let mut content = self.client.get(&url).call()?.into_string()?;
@@ -848,7 +858,7 @@ impl HNClient {
 
             let next_page_content = self
                 .client
-                .get(&format!("{HN_HOST_URL}/{next_page_link}"))
+                .get(&format!("{}/{next_page_link}", self.news_base))
                 .call()?
                 .into_string()?;
 
@@ -912,7 +922,8 @@ impl HNClient {
         let mut merged = HashMap::new();
         for hn_page in first_hn_page..=last_hn_page {
             let url = format!(
-                "{HN_HOST_URL}/{path}?p={hn_page}{}",
+                "{}/{path}?p={hn_page}{}",
+                self.news_base,
                 showdead_query_suffix("&")
             );
             let content = log!(
@@ -941,7 +952,7 @@ impl HNClient {
                     Some(dir) => dir.as_how_param(),
                     None => "un",
                 };
-                let vote_url = format!("{HN_HOST_URL}/vote?id={id}&how={how}&auth={auth}");
+                let vote_url = format!("{}/vote?id={id}&how={how}&auth={auth}", self.news_base);
                 self.client.get(&vote_url).call()?;
             },
             format!("vote HN item (id={id})")
@@ -992,7 +1003,8 @@ impl HNClient {
         let mut merged = HashMap::new();
         for hn_page in first_hn_page..=last_hn_page {
             let url = format!(
-                "{HN_HOST_URL}/{path}?p={hn_page}{}",
+                "{}/{path}?p={hn_page}{}",
+                self.news_base,
                 showdead_query_suffix("&")
             );
             let content = log!(
@@ -1020,7 +1032,7 @@ impl HNClient {
         log!(
             {
                 let how = if rescind { "un" } else { "up" };
-                let url = format!("{HN_HOST_URL}/vouch?id={id}&how={how}&auth={auth}");
+                let url = format!("{}/vouch?id={id}&how={how}&auth={auth}", self.news_base);
                 self.client.get(&url).call()?;
             },
             format!("vouch HN item (id={id}, rescind={rescind})")
@@ -1036,7 +1048,7 @@ impl HNClient {
     /// should pre-gate the common case (ownership) so users don't see that
     /// failure path after typing a full edit.
     pub fn fetch_edit_form(&self, comment_id: u32) -> Result<EditForm> {
-        let url = format!("{HN_HOST_URL}/edit?id={comment_id}");
+        let url = format!("{}/edit?id={comment_id}", self.news_base);
         let response = self
             .client
             .get(&url)
@@ -1085,7 +1097,7 @@ impl HNClient {
     /// and rejects cross-edits.
     pub fn submit_comment_edit(&self, comment_id: u32, hmac: &str, new_text: &str) -> Result<()> {
         let id_str = comment_id.to_string();
-        let url = format!("{HN_HOST_URL}/xedit");
+        let url = format!("{}/xedit", self.news_base);
         let response_body = self
             .client
             .post(&url)
@@ -1116,7 +1128,7 @@ impl HNClient {
     /// box (locked/dead/archived) are also distinguished so the user gets
     /// actionable advice instead of a generic "form missing" string.
     pub fn post_reply(&self, parent_id: u32, text: &str) -> Result<()> {
-        let page_url = format!("{HN_HOST_URL}/item?id={parent_id}");
+        let page_url = format!("{}/item?id={parent_id}", self.news_base);
         let response = self
             .client
             .get(&page_url)
@@ -1154,7 +1166,7 @@ impl HNClient {
         // goto input; on /item the input carries the item URL, and we
         // mirror it so our POST shape matches a browser's.
         let goto = format!("item?id={parent_id}");
-        let comment_url = format!("{HN_HOST_URL}/comment");
+        let comment_url = format!("{}/comment", self.news_base);
         let response_body = self
             .client
             .post(&comment_url)
@@ -1179,7 +1191,7 @@ impl HNClient {
     /// swallowed, so a failed parse still lets the rest of the app start
     /// up cleanly.
     pub fn fetch_profile_info(&self, username: &str) -> ProfileInfo {
-        let url = format!("{HN_HOST_URL}/user?id={username}");
+        let url = format!("{}/user?id={username}", self.news_base);
         let body = log!(
             match self.client.get(&url).call() {
                 Ok(resp) => match resp.into_string() {

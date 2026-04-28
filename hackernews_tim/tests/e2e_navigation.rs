@@ -3,14 +3,9 @@
 //!
 //! See [`e2e_first_run.rs`] for the surrounding harness conventions
 //! (TTY-gated flavor / auth prompts, `HOME` / `XDG_*` isolation,
-//! `HN_ALGOLIA_BASE` / `HN_FIREBASE_BASE` overrides). The same
-//! `news.ycombinator.com` caveat from §3.2.1 applies: the
-//! unauthenticated front-page render hits real HN for vote state,
-//! and the comment-view drilldown additionally hits
-//! `news.ycombinator.com/item?id=<id>` via `get_page_content`. Both
-//! return safe-to-ignore data for fixture IDs that don't collide
-//! with the live `/news` page; a `--no-real-network` enforcement is
-//! deferred to TEST_PLAN.md §3.3 / Phase 3 acceptance.
+//! `HN_ALGOLIA_BASE` / `HN_FIREBASE_BASE` / `HN_NEWS_BASE`
+//! overrides). All three base URLs point at the in-process
+//! [`FakeHnServer`], so no traffic escapes to the real HN hosts.
 
 #![cfg(target_os = "linux")]
 
@@ -26,10 +21,11 @@ use helpers::{spawn_app, AppHandle, SpawnOptions, DEFAULT_WAIT};
 
 const FRONT_PAGE_RENDER_TIMEOUT: Duration = Duration::from_secs(60);
 
-// Use ID 10001 — a real, stable HN item from 2007. The fixture
-// `/v0/item/...json` response is served from `FakeHnServer`, but
-// `get_page_content` (vote-state HTML) still hits real HN; pinning to
-// an existing ID keeps that incidental request from 404-ing.
+// Fixture story IDs. Both the Algolia (`/api/v1/...`) and Firebase
+// (`/v0/item/...json`) endpoints are mocked, and `HN_NEWS_BASE`
+// routes the binary's `news.ycombinator.com` traffic
+// (`/item?id=<id>` for vote-state HTML) at the same fake server, so
+// these IDs need not collide with real HN items.
 const STORY1_ID: u32 = 10001;
 const STORY2_ID: u32 = 10002;
 const STORY3_ID: u32 = 10003;
@@ -106,7 +102,8 @@ fn front_page_navigates_with_j_k_and_ctrl_d() {
 
     let opts = SpawnOptions::new()
         .algolia_base(server.algolia_base())
-        .firebase_base(server.firebase_base());
+        .firebase_base(server.firebase_base())
+        .news_base(server.news_base());
     let mut handle = spawn_app(opts).expect("spawn_app should succeed");
 
     dismiss_first_run_prompts(&mut handle);
@@ -149,7 +146,8 @@ fn front_page_navigates_with_j_k_and_ctrl_d() {
     handle.send_keys("k").expect("send k");
     let row_after_k = wait_for_focus_change(&handle, row_story3);
     assert_eq!(
-        row_after_k, row_story2,
+        row_after_k,
+        row_story2,
         "k should move focus back to row {row_story2} (saw {row_after_k})\n--- screen ---\n{}",
         handle.screen()
     );
@@ -226,9 +224,17 @@ fn drill_into_comments_and_back_to_front_page() {
         }),
     );
 
+    // The unauthenticated comment-view path also fetches the rendered
+    // HN HTML page via `get_page_content` to scrape vote state. An
+    // empty `<body>` is enough — `parse_vote_data_from_content` finds
+    // no `<a id='up_...'>` anchors and returns an empty map, while
+    // `lazy_load_comments` loads from the (empty) `kids` list.
+    server.mount_get_text("/item", 200, "<html><body></body></html>");
+
     let opts = SpawnOptions::new()
         .algolia_base(server.algolia_base())
-        .firebase_base(server.firebase_base());
+        .firebase_base(server.firebase_base())
+        .news_base(server.news_base());
     let mut handle = spawn_app(opts).expect("spawn_app should succeed");
 
     dismiss_first_run_prompts(&mut handle);
@@ -259,7 +265,9 @@ fn drill_into_comments_and_back_to_front_page() {
     // after the title bar appears, otherwise the back-nav key races the
     // initial draw and gets swallowed.
     std::thread::sleep(Duration::from_millis(200));
-    handle.send_keys("\x7f").expect("send Backspace (goto_previous_view)");
+    handle
+        .send_keys("\x7f")
+        .expect("send Backspace (goto_previous_view)");
 
     handle
         .wait_for_text(STORY2_TITLE, DEFAULT_WAIT)

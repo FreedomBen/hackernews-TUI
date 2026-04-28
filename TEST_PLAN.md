@@ -68,7 +68,7 @@ authoritative test names.
 - [x] 3.2.b Comment view drilldown + back navigation (table 3.2.2–3.2.3)
 - [x] 3.2.c Search view workflow (table 3.2.4)
 - [x] 3.2.d Article view + reader mode + link dialog (table 3.2.5)
-- [ ] 3.2.e Login flow against fake backend (table 3.2.6)
+- [x] 3.2.e Login flow against fake backend (table 3.2.6)
 - [ ] 3.2.f Vote / reply happy paths (table 3.2.7–3.2.8)
 - [ ] 3.2.g Custom keymap from TOML (table 3.2.9)
 - [ ] 3.2.h CLI flags `-i`, `--init-config`, `--update-theme`, `--migrate-auth` (table 3.2.10–3.2.13)
@@ -427,15 +427,18 @@ with `#[cfg(target_os = "linux")]`, and CI runs `make e2e` only on the
   parsing, cookie handling, and error mapping that a trait-level fake
   cannot reach. Do not refactor Phase 3 to use `FakeHnApi`.
 - Build a `FakeHnServer` that mounts canned responses for the Algolia
-  (`/api/v1/...`) and HN-official (`/v0/...`, the Firebase host) paths
+  (`/api/v1/...`), HN-official (`/v0/...`, the Firebase host), and
+  `news.ycombinator.com` (`/login`, `/vote`, `/vouch`, `/comment`,
+  `/edit`, `/xedit`, `/item`, `/threads`, `/user`, `/news`) paths
   used by `HNClient`. The constants in `client/mod.rs` are
-  `HN_ALGOLIA_PREFIX` and `HN_OFFICIAL_PREFIX`; the env-var overrides
-  should be named `HN_ALGOLIA_BASE` and `HN_FIREBASE_BASE` (matching the
-  upstream API names) and read by `HNClient` on construction, falling
-  back to the production URLs. The values are full base URLs without
-  trailing slashes (e.g. `http://127.0.0.1:54321`), matching how the
-  existing constants are interpolated. Document the env vars only in
-  the e2e test README — they are test-only knobs, not user config.
+  `HN_ALGOLIA_PREFIX`, `HN_OFFICIAL_PREFIX`, and `HN_HOST_URL`; the
+  env-var overrides are named `HN_ALGOLIA_BASE`, `HN_FIREBASE_BASE`,
+  and `HN_NEWS_BASE` (matching the upstream API names) and read by
+  `HNClient` on construction, falling back to the production URLs.
+  The values are full base URLs without trailing slashes (e.g.
+  `http://127.0.0.1:54321`), matching how the existing constants are
+  interpolated. Document the env vars only in the e2e test README —
+  they are test-only knobs, not user config.
 - Reuse the HTML / JSON fixtures already collected for Phases 1 and 2
   where possible — duplicate only what's needed for end-to-end paths.
 - For login / vote / reply tests, the fake server records request bodies

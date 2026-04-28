@@ -60,6 +60,15 @@ impl FakeHnServer {
         format!("{}/v0", self.base_url())
     }
 
+    /// HN news.ycombinator.com host base — pass directly as
+    /// `HN_NEWS_BASE`. Mirrors the production host
+    /// `https://news.ycombinator.com` (no path suffix). Used by the
+    /// binary for `/login`, `/vote`, `/vouch`, `/comment`, `/edit`,
+    /// `/xedit`, `/item`, `/threads`, `/user`, and `/news` requests.
+    pub fn news_base(&self) -> String {
+        self.base_url()
+    }
+
     /// Mount a GET handler at `route` returning `body` as JSON with
     /// the given HTTP status. `route` is server-relative
     /// (e.g. `"/api/v1/items/12345"`).
@@ -75,12 +84,7 @@ impl FakeHnServer {
 
     /// Mount a GET handler at `route` returning `body` as a raw
     /// string. Useful for HTML fixture responses (HN scraping).
-    pub fn mount_get_text<P: Into<String>, B: Into<String>>(
-        &self,
-        route: P,
-        status: u16,
-        body: B,
-    ) {
+    pub fn mount_get_text<P: Into<String>, B: Into<String>>(&self, route: P, status: u16, body: B) {
         let route = route.into();
         let body = body.into();
         self.runtime.block_on(
@@ -90,6 +94,63 @@ impl FakeHnServer {
                     ResponseTemplate::new(status)
                         .set_body_string(body)
                         .insert_header("content-type", "text/html; charset=utf-8"),
+                )
+                .mount(&self.server),
+        );
+    }
+
+    /// Mount a POST handler at `route` returning `body` as HTML with
+    /// the given HTTP status. `route` is server-relative
+    /// (e.g. `"/login"`, `"/comment"`). Useful for HN form-submit
+    /// endpoints (`/vote`, `/vouch`, `/comment`, `/xedit`).
+    pub fn mount_post_text<P: Into<String>, B: Into<String>>(
+        &self,
+        route: P,
+        status: u16,
+        body: B,
+    ) {
+        let route = route.into();
+        let body = body.into();
+        self.runtime.block_on(
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .set_body_string(body)
+                        .insert_header("content-type", "text/html; charset=utf-8"),
+                )
+                .mount(&self.server),
+        );
+    }
+
+    /// Mount a POST handler that additionally issues a `user` session
+    /// cookie on the response (`Path=/`), mirroring HN's `/login`
+    /// `Set-Cookie` header. The binary's cookie jar then carries
+    /// `cookie_value` on every subsequent request to the fake host —
+    /// which is what `current_session_cookie()` looks up after a
+    /// successful login.
+    pub fn mount_post_with_user_cookie<P, B, C>(
+        &self,
+        route: P,
+        status: u16,
+        body: B,
+        cookie_value: C,
+    ) where
+        P: Into<String>,
+        B: Into<String>,
+        C: Into<String>,
+    {
+        let route = route.into();
+        let body = body.into();
+        let cookie = format!("user={}; Path=/", cookie_value.into());
+        self.runtime.block_on(
+            Mock::given(method("POST"))
+                .and(path(route))
+                .respond_with(
+                    ResponseTemplate::new(status)
+                        .set_body_string(body)
+                        .insert_header("content-type", "text/html; charset=utf-8")
+                        .insert_header("set-cookie", cookie.as_str()),
                 )
                 .mount(&self.server),
         );

@@ -45,8 +45,9 @@ pub const DEFAULT_WAIT: Duration = Duration::from_secs(5);
 pub const DEFAULT_QUIT_KEY: &str = "q";
 
 /// Placeholder URL handed to `HN_ALGOLIA_BASE` / `HN_FIREBASE_BASE`
-/// when no fake backend is configured. Picks an unrouteable port so a
-/// stray real request fails loudly instead of escaping to production.
+/// / `HN_NEWS_BASE` when no fake backend is configured. Picks an
+/// unrouteable port so a stray real request fails loudly instead of
+/// escaping to production.
 const DEFAULT_BLACKHOLE_BASE: &str = "http://127.0.0.1:1";
 
 /// Path to the freshly-built debug binary. Cargo sets
@@ -96,6 +97,7 @@ pub struct SpawnOptions {
     pub size: PtySize,
     pub algolia_base: Option<String>,
     pub firebase_base: Option<String>,
+    pub news_base: Option<String>,
     pub dirs: Option<TestDirs>,
 }
 
@@ -113,6 +115,7 @@ impl SpawnOptions {
             },
             algolia_base: None,
             firebase_base: None,
+            news_base: None,
             dirs: None,
         }
     }
@@ -147,6 +150,11 @@ impl SpawnOptions {
 
     pub fn firebase_base(mut self, base: impl Into<String>) -> Self {
         self.firebase_base = Some(base.into());
+        self
+    }
+
+    pub fn news_base(mut self, base: impl Into<String>) -> Self {
+        self.news_base = Some(base.into());
         self
     }
 
@@ -246,10 +254,7 @@ impl AppHandle {
             *counts.entry(key).or_insert(0) += 1;
             row_keys.push((key, r));
         }
-        let body_bg = counts
-            .iter()
-            .max_by_key(|(_, n)| *n)
-            .map(|(k, _)| *k)?;
+        let body_bg = counts.iter().max_by_key(|(_, n)| *n).map(|(k, _)| *k)?;
         for (key, r) in row_keys {
             if key != body_bg {
                 return Some(r);
@@ -354,9 +359,10 @@ fn screen_text(screen: &vt100::Screen) -> String {
 
 /// Spawn the `hackernews_tim` debug binary in a PTY, applying the
 /// always-set isolation env vars (`HOME`, `XDG_CONFIG_HOME`,
-/// `XDG_DATA_HOME`, `HN_ALGOLIA_BASE`, `HN_FIREBASE_BASE`) plus a
-/// `-l <log_dir>` arg. Returns an [`AppHandle`] whose reader thread is
-/// already streaming output into a `vt100::Parser`.
+/// `XDG_DATA_HOME`, `HN_ALGOLIA_BASE`, `HN_FIREBASE_BASE`,
+/// `HN_NEWS_BASE`) plus a `-l <log_dir>` arg. Returns an
+/// [`AppHandle`] whose reader thread is already streaming output into
+/// a `vt100::Parser`.
 pub fn spawn_app(mut opts: SpawnOptions) -> Result<AppHandle, String> {
     let dirs = match opts.dirs.take() {
         Some(d) => d,
@@ -386,6 +392,12 @@ pub fn spawn_app(mut opts: SpawnOptions) -> Result<AppHandle, String> {
     cmd.env(
         "HN_FIREBASE_BASE",
         opts.firebase_base
+            .clone()
+            .unwrap_or_else(|| DEFAULT_BLACKHOLE_BASE.into()),
+    );
+    cmd.env(
+        "HN_NEWS_BASE",
+        opts.news_base
             .clone()
             .unwrap_or_else(|| DEFAULT_BLACKHOLE_BASE.into()),
     );
@@ -424,9 +436,7 @@ pub fn spawn_app(mut opts: SpawnOptions) -> Result<AppHandle, String> {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let mut p = parser_clone
-                        .lock()
-                        .expect("vt100 parser mutex poisoned");
+                    let mut p = parser_clone.lock().expect("vt100 parser mutex poisoned");
                     p.process(&buf[..n]);
                 }
                 Err(_) => break,

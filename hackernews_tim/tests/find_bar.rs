@@ -35,7 +35,9 @@ use cursive::Cursive;
 
 use hackernews_tim::client::HnApi;
 use hackernews_tim::model::Story;
-use hackernews_tim::test_support::{ensure_globals_initialised, leak_fake_api, make_story, PuppetHarness};
+use hackernews_tim::test_support::{
+    ensure_globals_initialised, leak_fake_api, make_story, PuppetHarness,
+};
 use hackernews_tim::view::find_bar::{FindState, FindStateRef};
 use hackernews_tim::view::story_view::{construct_story_main_view, StoryView};
 use hackernews_tim::view::traits::ListViewContainer;

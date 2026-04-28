@@ -51,10 +51,7 @@ fn hnclient_routes_through_fake_backend() {
         .expect("get_item_from_id should hit the fake server");
 
     let requests = server.received_requests();
-    let paths: Vec<String> = requests
-        .iter()
-        .map(|r| r.url.path().to_string())
-        .collect();
+    let paths: Vec<String> = requests.iter().map(|r| r.url.path().to_string()).collect();
     assert!(
         paths.iter().any(|p| p == "/api/v1/items/12345"),
         "expected request to /api/v1/items/12345; saw paths: {paths:?}"
