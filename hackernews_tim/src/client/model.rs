@@ -223,44 +223,59 @@ pub struct UserCommentsResponse {
     pub hits: Vec<UserCommentResponse>,
 }
 
+impl UserCommentResponse {
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
+    /// HTML snippet linking back to the parent thread, used as a header
+    /// prefix on the user's own comment in the threads view. The link is
+    /// plain HTML so it flows through `parse_hn_html_text` and ends up
+    /// in the `CommentView`'s link dialog (default `o`/`O`). Returns an
+    /// empty string when the parent story id isn't known.
+    pub fn story_header_html(&self) -> String {
+        let Some(sid) = self.story_id else {
+            return String::new();
+        };
+        let title = self
+            .story_title
+            .as_deref()
+            .map(html_escape::encode_text)
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|| "parent thread".to_string());
+        format!(
+            "<p><i>re: <a href=\"{}/item?id={sid}\">{title}</a></i></p>",
+            super::HN_HOST_URL
+        )
+    }
+
+    /// Convert the hit into a single level-0 [`Comment`] without fetching
+    /// its replies. Used as a fallback when the per-comment subtree fetch
+    /// fails — we still want the user to see their own comment, just
+    /// without the reply tree.
+    pub fn into_root_comment(self) -> Option<Comment> {
+        let header = self.story_header_html();
+        let author = self.author?;
+        let text = self.comment_text?;
+        let content = format!("{header}{text}");
+        Some(Comment {
+            id: self.id,
+            level: 0,
+            n_children: 0,
+            time: self.time,
+            author,
+            content: decode_html(&content),
+            dead: self.dead,
+            flagged: self.flagged,
+        })
+    }
+}
+
 impl From<UserCommentsResponse> for Vec<Comment> {
     fn from(r: UserCommentsResponse) -> Self {
         r.hits
             .into_iter()
-            .filter_map(|h| {
-                let author = h.author?;
-                let text = h.comment_text?;
-                // Prepend a "re: <story title>" header that links back to
-                // the parent thread on HN. The link is plain HTML so it
-                // flows through `parse_hn_html_text` and ends up in the
-                // CommentView's link dialog (default `o`/`O`).
-                let header = match h.story_id {
-                    Some(sid) => {
-                        let title = h
-                            .story_title
-                            .as_deref()
-                            .map(html_escape::encode_text)
-                            .map(|s| s.into_owned())
-                            .unwrap_or_else(|| "parent thread".to_string());
-                        format!(
-                            "<p><i>re: <a href=\"{}/item?id={sid}\">{title}</a></i></p>",
-                            super::HN_HOST_URL
-                        )
-                    }
-                    None => String::new(),
-                };
-                let content = format!("{header}{text}");
-                Some(Comment {
-                    id: h.id,
-                    level: 0,
-                    n_children: 0,
-                    time: h.time,
-                    author,
-                    content: decode_html(&content),
-                    dead: h.dead,
-                    flagged: h.flagged,
-                })
-            })
+            .filter_map(UserCommentResponse::into_root_comment)
             .collect()
     }
 }

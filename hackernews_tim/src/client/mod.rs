@@ -405,13 +405,18 @@ impl HNClient {
     /// Build a [`PageData`] backed by the given user's recent comments,
     /// fetched via HN Algolia's `search_by_date?tags=comment,author_<u>`
     /// listing. Powers the in-TUI threads view, which mirrors HN's own
-    /// `/threads?id=<u>` page.
+    /// `/threads?id=<u>` page — including replies underneath each of the
+    /// user's comments.
     ///
-    /// The returned `PageData` has a synthetic `root_item` (no real story)
-    /// and an empty vote/vouch state — voting on threads-view comments
-    /// would require fetching each parent story's HN page, which we skip
-    /// for v1. Each comment is at level 0 with a "re: <story_title>"
-    /// header link to the parent thread.
+    /// Each user comment is fetched as its own subtree via the
+    /// `/items/{id}` endpoint (in parallel), so replies arrive at level
+    /// 1+ underneath their parent. A "re: <story_title>" header link is
+    /// prepended to the level-0 root of each subtree so the user can
+    /// navigate back to the parent thread.
+    ///
+    /// The returned `PageData` has a synthetic `root_item` and empty
+    /// vote/vouch state — voting on threads-view comments would require
+    /// fetching each parent story's HN page, which we skip for now.
     pub fn get_user_threads_page(&self, username: &str, page: usize) -> Result<PageData> {
         let page_size = config::page_size();
         let request_url = format!(
@@ -426,7 +431,37 @@ impl HNClient {
             format!("get user threads (user={username}, page={page}) using {request_url}")
         );
 
-        let comments: Vec<Comment> = response.into();
+        // For each user comment, fetch its full subtree (replies and
+        // their descendants) via Algolia's `/items/{id}` endpoint. We
+        // fan out in parallel via rayon — `into_par_iter().flat_map`
+        // preserves listing order, so the final flattened sequence is
+        // [hit_0_root, hit_0_replies…, hit_1_root, hit_1_replies…, …].
+        // On per-subtree fetch failure we fall back to the flat hit so
+        // the user still sees their comment without its reply tree.
+        let comments: Vec<Comment> = log!(
+            response
+                .hits
+                .into_par_iter()
+                .flat_map(|hit| {
+                    let id = hit.id();
+                    let header = hit.story_header_html();
+                    match self.get_item_from_id::<CommentResponse>(id) {
+                        Ok(subtree) => {
+                            let mut comments: Vec<Comment> = subtree.into();
+                            if let Some(root) = comments.first_mut() {
+                                root.content = format!("{header}{}", root.content);
+                            }
+                            comments
+                        }
+                        Err(err) => {
+                            warn!("failed to load reply tree for comment id={id}: {err}");
+                            hit.into_root_comment().map(|c| vec![c]).unwrap_or_default()
+                        }
+                    }
+                })
+                .collect::<Vec<_>>(),
+            format!("fetch reply subtrees for user threads (user={username}, page={page})")
+        );
 
         // Push everything to the receiver in one batch and drop the sender.
         // CommentView polls the channel until it's both empty and closed,
@@ -443,8 +478,9 @@ impl HNClient {
         let header_style = config::get_config_theme().component_style.username;
         let mut header_text = StyledString::styled(title.clone(), header_style);
         header_text.append_plain(format!(
-            "\nRecent comments by {username} (page {page}). Press `o` on a \
-             comment to open its parent thread on Hacker News."
+            "\nRecent comments (with replies) by {username}, page {page}. \
+             Press `o` on a comment's `re:` link to jump to the parent \
+             thread on Hacker News."
         ));
         let root_item = HnItem::synthetic_root(header_text);
 
