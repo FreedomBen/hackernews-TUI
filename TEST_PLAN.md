@@ -14,7 +14,7 @@ needs one focused refactor.
   - `config/mod.rs` + `config/init.rs` (25 tests) — auth round-trips, file
     permissions, theme replacement, keyring pointer files.
   - `view/find_bar.rs`, `view/comment_view.rs`, `model.rs`,
-    `client/model.rs` — small pure helpers.
+    `client/model.rs`, `config/theme.rs` — small pure helpers.
 - Untested or thinly tested: `client/query.rs`, `config/keybindings.rs`,
   `parser/{html,article,rcdom}.rs`, `utils.rs`, `reply_editor.rs`, every view
   module except `find_bar` and the `parse_link_index` helper in `comment_view`.
@@ -68,9 +68,9 @@ parameter so the test can pass a fixture.
 
 | Target                                         | What to assert                                                                                        |
 | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `StorySortMode::next("front_page", _)`         | Cycles `None → Date → Points → None`.                                                                 |
-| `StorySortMode::next("story", _)`              | Starts at `Date`, cycles `Date → Points → Date` (never None for `story` / `job`).                     |
-| `StorySortMode::next("ask_hn", _)`             | Same as `front_page` — `None → Date → Points → None`.                                                 |
+| `StorySortMode::next("front_page", _)`         | `None.next("front_page") == None`; `Date` and `Points` inputs panic on the `front_page should have no sort mode` assert. |
+| `StorySortMode::next("story", _)`              | Starts at `Date`, cycles `Date → Points → Date` (never None for `story` / `job`); `None` input panics on the `story/job should have a sort mode` assert. |
+| `StorySortMode::next("ask_hn", _)`             | Cycles `None → Date → Points → None` (same path as every non-`front_page`/`story`/`job` tag).        |
 | `FilterInterval::query("points")`              | Empty when both bounds None; emits `,points>=N` for start only; `,points<N` for end only; both bounds combined. |
 | `FilterInterval::desc("points")`               | Renders `points: [start:end]` with empty strings for missing bounds.                                   |
 | `StoryNumericFilters::query()`                 | Empty when all intervals empty; otherwise prefixed with `&numericFilters=` and trailing comma stripped. |
@@ -125,13 +125,18 @@ pure. Build a small set of fixture HTML snippets and assert on the resulting
 
 ### 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
 
-Harder to fixture (depends on `readable-readability`), but doable:
+Harder to fixture (depends on `readable-readability`), but doable. Note that
+`Article::parse(&self, max_width)` only renders `self.content` — the
+`title`/`url` fields on `Article` are populated by the upstream
+`readable-readability` pipeline that constructs the struct.
 
-- Assert `Article::parse` extracts the title and body of a known fixture HTML
-  page (commit a real-world article HTML under `tests/fixtures/`).
-- Assert the returned `StyledString` byte-for-byte contains expected paragraph
-  separators and link markers.
-- Assert link extraction is in document order.
+- Assert that constructing `Article` from a fixture HTML page extracts the
+  expected `title`/`url` (commit a real-world article HTML under
+  `tests/fixtures/`).
+- Assert `Article::parse(max_width)` renders the body into an
+  `HTMLTextParsedResult` whose `StyledString` byte-for-byte contains
+  expected paragraph separators and link markers.
+- Assert link extraction in the result is in document order.
 
 If the readability output is too brittle to snapshot, restrict assertions to
 *invariants* (link count, title presence, no-panic on malformed input).
@@ -140,7 +145,7 @@ If the readability output is too brittle to snapshot, restrict assertions to
 
 | Target                                         | What to assert                                                                          |
 | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `get_elapsed_time_as_text(time)`               | Returns `"X seconds"`, `"X minutes"`, `"X hours"`, `"X days"`, `"X months"`, `"X years"` at boundary values; pluralization via `format_plural`. |
+| `get_time_offset_in_text(offset)` (private)    | Returns `"X seconds"`, `"X minutes"`, `"X hours"`, `"X days"`, `"X months"`, `"X years"` at boundary values; pluralization via `format_plural`. (This is the pure inner half — `get_elapsed_time_as_text` reads `SystemTime::now()` and is not pure; one smoke test for the now-relative path is enough.) |
 | `from_day_offset_to_time_offset_in_secs(d)`    | `0 → 0`, `1 → 86400`, `7 → 604800`.                                                     |
 | `shorten_url(url)`                             | Strips scheme + `www.`; truncates per current rule.                                     |
 | `decode_html("&amp;&lt;&gt;&#x27;")`           | Returns `&<>'`.                                                                         |
@@ -155,8 +160,8 @@ existing `config::tests::auth_write_*` tests.
 | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `write_scaffold(path, parent)`      | File contains the parent text quoted with `> ` prefixes plus the boundary line and instructions.    |
 | `write_edit_scaffold(path, text)`   | File contains the current text verbatim plus the boundary line.                                     |
-| `read_and_strip(path)`              | Returns text above the boundary; trims trailing whitespace; returns `None`-equivalent (empty) when only the scaffold remains. |
-| `scratch_path()`                    | Returns a path under the system temp dir with a stable filename.                                    |
+| `read_and_strip(path)`              | Returns text above the boundary as `Result<String>`; trims surrounding whitespace; returns an empty string when only the scaffold remains. |
+| `scratch_path()`                    | Returns a path under the system temp dir matching `hn-reply-{pid}-{nanos}.md`; consecutive calls return distinct paths. |
 
 ### 1.8 View-module helpers (lift, then test)
 
@@ -219,11 +224,14 @@ This refactor is the bulk of Phase 2 cost. Phase 1 should not block on it.
 `cursive_core` ships a `puppet` backend that renders to an in-memory cell
 buffer and accepts events programmatically.
 
-- Add a `dev-dependency` on `cursive_core` with the `puppet-backend` feature
-  enabled (verify the feature name against the 0.3.7 source — if it's not
-  exposed, fall back to building views in isolation and calling
+- `cursive_core` is already a regular dependency (`0.3.7`); enable its
+  puppet backend for tests (verify the feature name against the 0.3.7
+  source — likely `puppet-backend` — and either add the feature to the
+  existing dependency line or duplicate the crate as a dev-dependency
+  with the feature enabled). If the feature isn't exposed, fall back to
+  building views in isolation and calling
   `View::layout`/`View::on_event`/`View::draw` against a constructed
-  `Printer` with a stub backend).
+  `Printer` with a stub backend.
 - Create `hackernews_tim/tests/support/mod.rs` (or a `test-support` module
   inside the crate) with helpers:
   - `build_cursive_with(backend) -> Cursive`
@@ -302,8 +310,8 @@ Each item below is one or more integration tests under `hackernews_tim/tests/`.
 
 | Scenario                                                          | Assertion                                                                                                          |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `g f` (front-page chord)                                          | Active view becomes a StoryView for the front page.                                                                |
-| `g a`, `g s`, `g j`, `g h`, `g t`                                 | Each chord opens the right view.                                                                                   |
+| `F1` (default `goto_front_page_view`)                             | Active view becomes a StoryView for the front page.                                                                |
+| `F2` / `F3` / `F4` / `F5` / `F6` (defaults for `goto_all_stories_view`, `goto_ask_hn_view`, `goto_show_hn_view`, `goto_jobs_view`, `goto_my_threads_view`) | Each opens the corresponding view.                                              |
 | Custom keymap registered via TOML config                          | Pressing the configured key opens a StoryView with the configured tag and sort mode.                               |
 | `?` opens help dialog                                             | HelpView matches the current parent view's commands.                                                               |
 | Quit (`q`)                                                        | Cursive event loop signals shutdown.                                                                               |
