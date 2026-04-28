@@ -480,8 +480,19 @@ fn main() {
                             }
                             reply_editor::wait_for_enter();
                         }
-                        Ok(Some(_)) | Ok(None) => {
-                            // Unchanged or cleared → treat as cancel.
+                        Ok(Some(_)) => {
+                            info!("edit of comment {comment_id} aborted: unchanged");
+                            eprintln!(
+                                "✗ Comment {comment_id} not edited: the body was unchanged."
+                            );
+                            reply_editor::wait_for_enter();
+                        }
+                        Ok(None) => {
+                            info!("edit of comment {comment_id} aborted: empty body");
+                            eprintln!(
+                                "✗ Comment {comment_id} not edited: the editor exited with an empty body."
+                            );
+                            reply_editor::wait_for_enter();
                         }
                         Err(err) => {
                             warn!("editor handoff for edit (id={comment_id}) failed: {err:#}");
