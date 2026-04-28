@@ -31,7 +31,7 @@ truth for individual cases.
 
 - [x] 1.1 `client/query.rs` — URL/query construction
 - [x] 1.2 `client/mod.rs` — additional private helpers
-- [ ] 1.3 `config/keybindings.rs` — typed key parsing
+- [x] 1.3 `config/keybindings.rs` — typed key parsing
 - [ ] 1.4 `parser/html.rs` — HN comment HTML rendering
 - [ ] 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
 - [ ] 1.6 `utils.rs` — formatting helpers
@@ -99,7 +99,7 @@ Fixture HTML lives next to existing fixtures (already established pattern in
 
 | Target                                        | What to assert                                                                                |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `Keys::deserialize` from TOML strings         | Parses single-key (`"q"`), modifier (`"ctrl-c"`), special key (`"esc"`, `"backspace"`), arrays of keys, and prefix chords (`"{story_id} g"`). |
+| `Keys::deserialize` from TOML strings         | Parses single-key (`"q"`), ctrl/alt modifier (`"C-c"` / `"M-x"`), special key (`"esc"`, `"backspace"`), and arrays of keys (which act as an OR — any one event triggers). Unknown strings return a deserialize error. (Prefix chords like `2 l` are handled at the view layer in `parse_link_index`, not by `Keys`.) |
 | `Display for Keys`                            | Round-trips to the same canonical form for each variant.                                      |
 | `From<Keys> for event::EventTrigger`          | Each variant produces a trigger that matches the expected `cursive::event::Event`.            |
 | `KeyMap` defaults                             | Each section's `Default` impl populates the documented bindings (snapshot a few critical ones — `quit`, `goto_front_page_view`, `open_help_dialog`). |

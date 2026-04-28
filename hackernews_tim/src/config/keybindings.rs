@@ -538,3 +538,245 @@ pub fn get_article_view_keymap() -> &'static ArticleViewKeyMap {
 pub fn get_link_dialog_keymap() -> &'static LinkDialogKeyMap {
     &super::get_config().keymap.link_dialog_keymap
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config_parser2::ConfigParser;
+    use cursive::event::{Event, EventTrigger, Key};
+
+    fn parse_keys(toml_value: &str) -> Keys {
+        // Wrap in a key=… table so we get a serde Deserialize entry point
+        // for the inner value (which can be a string or array).
+        let raw = format!("key = {toml_value}");
+        let value: toml::Value = toml::from_str(&raw).expect("test toml should parse");
+        let key_value = value.get("key").expect("key field").clone();
+        key_value.try_into().expect("Keys should deserialize")
+    }
+
+    fn try_parse_keys(toml_value: &str) -> Result<Keys, toml::de::Error> {
+        let raw = format!("key = {toml_value}");
+        let value: toml::Value = toml::from_str(&raw).expect("test toml should parse");
+        let key_value = value.get("key").expect("key field").clone();
+        key_value.try_into()
+    }
+
+    // --- Keys::deserialize ---
+
+    #[test]
+    fn keys_deserialize_single_char() {
+        let keys = parse_keys("\"q\"");
+        assert!(keys.has_event(&Event::Char('q')));
+        assert!(!keys.has_event(&Event::Char('Q')));
+    }
+
+    #[test]
+    fn keys_deserialize_ctrl_modifier() {
+        let keys = parse_keys("\"C-c\"");
+        assert!(keys.has_event(&Event::CtrlChar('c')));
+    }
+
+    #[test]
+    fn keys_deserialize_alt_modifier() {
+        let keys = parse_keys("\"M-x\"");
+        assert!(keys.has_event(&Event::AltChar('x')));
+    }
+
+    #[test]
+    fn keys_deserialize_special_keys() {
+        for (s, expected) in [
+            ("\"esc\"", Key::Esc),
+            ("\"backspace\"", Key::Backspace),
+            ("\"enter\"", Key::Enter),
+            ("\"tab\"", Key::Tab),
+            ("\"page_up\"", Key::PageUp),
+            ("\"page_down\"", Key::PageDown),
+            ("\"f1\"", Key::F1),
+            ("\"f12\"", Key::F12),
+        ] {
+            let keys = parse_keys(s);
+            assert!(
+                keys.has_event(&Event::Key(expected)),
+                "{s} should resolve to {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn keys_deserialize_array_acts_as_or() {
+        let keys = parse_keys(r#"["q", "C-c"]"#);
+        assert!(keys.has_event(&Event::Char('q')));
+        assert!(keys.has_event(&Event::CtrlChar('c')));
+        assert!(!keys.has_event(&Event::Char('x')));
+    }
+
+    #[test]
+    fn keys_deserialize_unknown_string_errors() {
+        // "ctrl-c" is not a valid key string — modifier syntax is "C-c".
+        let err = try_parse_keys("\"ctrl-c\"").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown/invalid key"),
+            "expected key parse error, got {err}"
+        );
+    }
+
+    #[test]
+    fn keys_deserialize_unknown_special_key_errors() {
+        let err = try_parse_keys("\"f99\"").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown/invalid key"),
+            "expected key parse error, got {err}"
+        );
+    }
+
+    // --- Display for Keys ---
+
+    #[test]
+    fn keys_display_single_char() {
+        let keys = Keys::new(vec!['q'.into()]);
+        assert_eq!(format!("{keys}"), "q");
+    }
+
+    #[test]
+    fn keys_display_ctrl_uses_capital_c_prefix() {
+        let keys = Keys::new(vec![Event::CtrlChar('c')]);
+        assert_eq!(format!("{keys}"), "C-c");
+    }
+
+    #[test]
+    fn keys_display_alt_uses_capital_m_prefix() {
+        let keys = Keys::new(vec![Event::AltChar('x')]);
+        assert_eq!(format!("{keys}"), "M-x");
+    }
+
+    #[test]
+    fn keys_display_special_keys() {
+        assert_eq!(format!("{}", Keys::new(vec![Key::Esc.into()])), "esc");
+        assert_eq!(
+            format!("{}", Keys::new(vec![Key::Backspace.into()])),
+            "backspace"
+        );
+        assert_eq!(format!("{}", Keys::new(vec![Key::F1.into()])), "f1");
+        assert_eq!(
+            format!("{}", Keys::new(vec![Key::PageUp.into()])),
+            "page_up"
+        );
+    }
+
+    #[test]
+    fn keys_display_multi_event_uses_brackets() {
+        let keys = Keys::new(vec!['q'.into(), Event::CtrlChar('c')]);
+        assert_eq!(format!("{keys}"), "[q, C-c]");
+    }
+
+    #[test]
+    fn keys_display_empty_renders_nothing() {
+        let keys = Keys::new(vec![]);
+        assert_eq!(format!("{keys}"), "");
+    }
+
+    // --- Round-trip: deserialize then display ---
+
+    #[test]
+    fn keys_round_trip_single_to_canonical() {
+        for canonical in ["q", "C-c", "M-x", "esc", "f1", "page_down"] {
+            let keys = parse_keys(&format!("\"{canonical}\""));
+            assert_eq!(format!("{keys}"), canonical);
+        }
+    }
+
+    // --- From<Keys> for EventTrigger ---
+
+    #[test]
+    fn keys_to_event_trigger_matches_listed_events() {
+        let keys = Keys::new(vec!['q'.into(), Event::CtrlChar('c')]);
+        let trigger: EventTrigger = keys.into();
+        assert!(trigger.apply(&Event::Char('q')));
+        assert!(trigger.apply(&Event::CtrlChar('c')));
+        assert!(!trigger.apply(&Event::Char('Q')));
+        assert!(!trigger.apply(&Event::Key(Key::Esc)));
+    }
+
+    // --- KeyMap defaults ---
+
+    #[test]
+    fn global_keymap_default_has_quit_binding() {
+        let g = GlobalKeyMap::default();
+        // `quit` defaults to {q, C-c}
+        assert!(g.quit.has_event(&Event::Char('q')));
+        assert!(g.quit.has_event(&Event::CtrlChar('c')));
+    }
+
+    #[test]
+    fn global_keymap_default_has_help_dialog_binding() {
+        let g = GlobalKeyMap::default();
+        assert!(g.open_help_dialog.has_event(&Event::Char('?')));
+    }
+
+    #[test]
+    fn global_keymap_default_function_keys_route_to_views() {
+        let g = GlobalKeyMap::default();
+        assert!(g.goto_front_page_view.has_event(&Event::Key(Key::F1)));
+        assert!(g.goto_all_stories_view.has_event(&Event::Key(Key::F2)));
+        assert!(g.goto_ask_hn_view.has_event(&Event::Key(Key::F3)));
+        assert!(g.goto_show_hn_view.has_event(&Event::Key(Key::F4)));
+        assert!(g.goto_jobs_view.has_event(&Event::Key(Key::F5)));
+        assert!(g.goto_my_threads_view.has_event(&Event::Key(Key::F6)));
+    }
+
+    #[test]
+    fn keymap_default_populates_every_section() {
+        let km = KeyMap::default();
+        // Spot-check at least one binding from each section to prove the
+        // top-level Default propagates all the way down.
+        assert!(km.global_keymap.quit.has_event(&Event::Char('q')));
+        assert!(km
+            .scroll_keymap
+            .up
+            .has_event(&Event::Char('k')));
+        assert!(km.custom_keymaps.is_empty());
+    }
+
+    // --- CustomKeyMap deserialization ---
+
+    #[test]
+    fn custom_keymap_deserializes_from_toml_block() {
+        // Same shape used by the [[keymap.custom_keymaps]] examples in
+        // examples/config.toml.
+        let toml_src = r#"
+            key = "M-1"
+            tag = "story"
+            by_date = false
+            [numeric_filters]
+            elapsed_days_interval = {start = 0, end = 3}
+            points_interval = {start = 10}
+            num_comments_interval = {}
+        "#;
+        let custom: CustomKeyMap = toml::from_str(toml_src).expect("custom keymap parse");
+        assert_eq!(custom.tag, "story");
+        assert!(!custom.by_date);
+        assert!(custom.key.has_event(&Event::AltChar('1')));
+        // Numeric filter description ignores num_comments because it's empty.
+        let desc = custom.numeric_filters.desc();
+        assert!(desc.contains("elapsed_days: [0:3]"));
+        assert!(desc.contains("points: [10:]"));
+    }
+
+    // --- ConfigParse merge ---
+
+    #[test]
+    fn global_keymap_parse_overlays_only_present_fields() {
+        // A partial overlay should change just `quit` and leave every other
+        // default field intact.
+        let mut g = GlobalKeyMap::default();
+        let original_help = g.open_help_dialog.clone();
+        let overlay: toml::Value = toml::from_str(r#"quit = "Q""#).unwrap();
+        g.parse(overlay).expect("partial overlay should apply");
+        assert!(g.quit.has_event(&Event::Char('Q')));
+        // The previous {q, C-c} default has been replaced wholesale by "Q".
+        assert!(!g.quit.has_event(&Event::Char('q')));
+        // Other defaults stay.
+        assert_eq!(format!("{}", g.open_help_dialog), format!("{original_help}"));
+        assert!(g.goto_front_page_view.has_event(&Event::Key(Key::F1)));
+    }
+}
