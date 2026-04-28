@@ -56,18 +56,23 @@ truth for individual cases.
 
 ### Phase 3 (PTY end-to-end tests, Linux-only)
 
-- [ ] 3.1.1 PTY harness — `portable-pty` + `vt100`
+Numbering note: `3.2.a`–`3.2.i` below are progress groupings; the
+individual scenario IDs in the §3.2 table (`3.2.1`–`3.2.15`) are the
+authoritative test names.
+
+- [ ] 3.1.1 PTY harness — `portable-pty` + `vt100`, `tests/e2e.rs` entry + `tests/e2e/` helpers
 - [ ] 3.1.2 Fixture HN backend — `wiremock`-served Algolia + Firebase responses (with `HNClient` base-URL overrides)
-- [ ] 3.1.3 `tests/e2e/` helpers, `make e2e` target, Linux-only `cfg` gate
-- [ ] 3.2.1 First-run flow + front-page render
-- [ ] 3.2.2 Comment view drilldown + back navigation
-- [ ] 3.2.3 Search view workflow
-- [ ] 3.2.4 Article view + reader mode
-- [ ] 3.2.5 Login flow against fake backend
-- [ ] 3.2.6 Vote / reply happy paths
-- [ ] 3.2.7 Custom keymap from TOML
-- [ ] 3.2.8 CLI flags (`-i`, `--init-config`, `--update-theme`, `--migrate-auth`)
-- [ ] 3.2.9 Error / network-failure paths
+- [ ] 3.1.3 Keyring mock backend wired via `keyring::set_default_credential_builder`
+- [ ] 3.1.4 `make e2e` target, Linux-only `cfg` gate, CI matrix entry
+- [ ] 3.2.a First-run flow + front-page render (table 3.2.1)
+- [ ] 3.2.b Comment view drilldown + back navigation (table 3.2.2–3.2.3)
+- [ ] 3.2.c Search view workflow (table 3.2.4)
+- [ ] 3.2.d Article view + reader mode + link dialog (table 3.2.5)
+- [ ] 3.2.e Login flow against fake backend (table 3.2.6)
+- [ ] 3.2.f Vote / reply happy paths (table 3.2.7–3.2.8)
+- [ ] 3.2.g Custom keymap from TOML (table 3.2.9)
+- [ ] 3.2.h CLI flags `-i`, `--init-config`, `--update-theme`, `--migrate-auth` (table 3.2.10–3.2.13)
+- [ ] 3.2.i Quit + error / network-failure paths (table 3.2.14–3.2.15)
 - [ ] 3.3 Fixture and harness discipline (per-test temp HOME, env-var backend, snapshot review)
 - [ ] Phase 3 acceptance — `make e2e` green on Linux CI; real binary exercised with mocked HN backends; macOS/Windows skip cleanly
 
@@ -378,49 +383,71 @@ with `#[cfg(target_os = "linux")]`, and CI runs `make e2e` only on the
 - Add `portable-pty` and `vt100` as
   `[target.'cfg(target_os = "linux")'.dev-dependencies]` of the
   `hackernews_tim` crate.
-- Create `hackernews_tim/tests/e2e/mod.rs` with helpers:
+- Layout: `hackernews_tim/tests/e2e.rs` is the integration test crate
+  entry point (Cargo runs it via `--test e2e`); shared helpers live in
+  `hackernews_tim/tests/e2e/helpers.rs` (or split into multiple files
+  under `tests/e2e/`) and are pulled into the entry file with
+  `#[path = "e2e/helpers.rs"] mod helpers;` so Cargo doesn't try to
+  compile them as a second test binary. Every scenario lives as a
+  `#[test]` function in `tests/e2e.rs` (or a `mod` it imports), all
+  guarded by `#[cfg(target_os = "linux")]`.
+- Helpers:
   - `spawn_app(args, env, cwd) -> AppHandle` — spawns the debug binary in
     a PTY sized to a known dimension (e.g. 120×40), wires its master end
-    to a `vt100::Parser`, and returns a handle.
+    to a `vt100::Parser`, and returns a handle. Always sets `HOME`,
+    `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `HN_ALGOLIA_BASE`,
+    `HN_FIREBASE_BASE`, and a `-l <tempdir>` log directory so the
+    developer's real environment cannot be read or written.
   - `AppHandle::send_keys(&str)` — writes UTF-8 / control sequences to
     the PTY.
   - `AppHandle::wait_for_text(needle, timeout)` — polls the parser's
-    visible screen until `needle` appears or the timeout fires; on
-    timeout, dumps the screen for diagnosis.
+    visible screen (50 ms interval) until `needle` appears or the
+    timeout fires; on timeout, dumps the screen for diagnosis.
   - `AppHandle::screen() -> String` — flattened visible text for `insta`
     snapshot comparison.
-  - `AppHandle::shutdown()` — sends quit, waits for exit, asserts the
-    return code.
-- Each test creates its own `tempfile::TempDir` for `HOME`,
-  `XDG_CONFIG_HOME`, and `XDG_DATA_HOME` so the developer's real config
-  cannot be read or written.
+  - `AppHandle::shutdown()` — sends the configured quit key (`q` by
+    default), waits for exit, asserts the return code.
 
 #### 3.1.2 Fixture HN backend
 
-- Add `wiremock` as a dev-dependency.
+- Add `wiremock` as a dev-dependency. `wiremock` is async; the helper
+  module owns a small `tokio` runtime (or uses `#[tokio::test]` /
+  `Runtime::block_on`) to start the server and capture recorded requests
+  from sync test bodies.
 - Build a `FakeHnServer` that mounts canned responses for the Algolia
-  (`/api/v1/...`) and Firebase (`/v0/...`) paths used by `HNClient`.
-- Add base-URL overrides to `HNClient` so tests can point it at the fake
-  server. Preferred shape: read `HN_ALGOLIA_BASE` and `HN_FIREBASE_BASE`
-  environment variables on construction, falling back to the production
-  URLs. Document the env vars in `docs/config.md`.
+  (`/api/v1/...`) and HN-official (`/v0/...`, the Firebase host) paths
+  used by `HNClient`. The constants in `client/mod.rs` are
+  `HN_ALGOLIA_PREFIX` and `HN_OFFICIAL_PREFIX`; the env-var overrides
+  should be named `HN_ALGOLIA_BASE` and `HN_FIREBASE_BASE` (matching the
+  upstream API names) and read by `HNClient` on construction, falling
+  back to the production URLs. The values are full base URLs without
+  trailing slashes (e.g. `http://127.0.0.1:54321`), matching how the
+  existing constants are interpolated. Document the env vars only in
+  the e2e test README — they are test-only knobs, not user config.
 - Reuse the HTML / JSON fixtures already collected for Phases 1 and 2
   where possible — duplicate only what's needed for end-to-end paths.
 - For login / vote / reply tests, the fake server records request bodies
   so assertions can verify the binary sent the expected payload.
-- Auth keyring tests use `keyring`'s mock backend (or a memory credential
-  builder via `keyring::set_default_credential_builder`) so they don't
-  depend on a real OS keychain or D-Bus session.
 
-#### 3.1.3 Test gating
+#### 3.1.3 Keyring test backend
+
+- Auth keyring tests use `keyring`'s mock backend (set via
+  `keyring::set_default_credential_builder` with `keyring::mock::default_credential_builder`)
+  so they don't depend on a real OS keychain or D-Bus session. Verify
+  the exact API against the version in `hackernews_tim/Cargo.toml`
+  before committing.
+- The mock backend is process-global state, so all e2e tests must run
+  with `--test-threads=1` (already required for the PTY harness).
+
+#### 3.1.4 Test gating
 
 - Keep the e2e module behind `#[cfg(target_os = "linux")]` so `cargo
   test` on macOS / Windows skips it cleanly with no compile-time
-  dependency on `portable-pty` / `vt100`.
+  dependency on `portable-pty` / `vt100` / `wiremock`.
 - Add a `make e2e` target wrapping
   `cargo test -p hackernews_tim --test e2e -- --test-threads=1` (PTY
-  tests are not safe to parallelize across the same temp `HOME`). Update
-  `make help`.
+  tests are not safe to parallelize across the same temp `HOME`, and
+  the keyring mock backend is process-global). Update `make help`.
 - In `.github/workflows/ci.yml`, run `make e2e` only on the
   `ubuntu-latest` matrix entry. Other OSes continue to run the existing
   `make test` only.
@@ -429,29 +456,34 @@ with `#[cfg(target_os = "linux")]`, and CI runs `make e2e` only on the
 
 | ID     | Scenario                                                  | Assertion                                                                                                        |
 | ------ | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| 3.2.1  | First run with no config, TTY                             | `prompt_for_flavor` answers `light`; default config is written to the temp config dir; front page renders.       |
+| 3.2.1  | First run with no config, TTY                             | PTY sends `l\n` to `prompt_for_flavor`; binary writes default light config to the temp config dir, prints `Wrote config to <path>`, then continues to render the front page. |
 | 3.2.2  | Front-page render + `j` / `k` / `Ctrl-D` navigation       | Visible row marker advances; snapshot of header + first three rows matches.                                      |
-| 3.2.3  | Drill into a story's comments and back                    | Comment view header shows the story title; Backspace returns to the front page in the prior scroll position.     |
+| 3.2.3  | Drill into a story's comments and back                    | Comment view header shows the story title; Backspace (default `goto_previous_view`) returns to the front page in the prior scroll position. |
 | 3.2.4  | Search workflow                                           | Configured search key opens search; typing a query and pressing Enter renders results from the fake backend.     |
-| 3.2.5  | Article view / reader mode                                | Reader mode renders fixture HTML; link-dialog open + numeric pick invokes a stub `BROWSER` script with the right URL. |
+| 3.2.5  | Article view / reader mode                                | Reader mode renders fixture HTML; link-dialog open + numeric pick invokes the stub script set as `url_open_command` in the test's TOML config, with the expected URL as its argument. |
 | 3.2.6  | Login flow                                                | Open login dialog, submit credentials; fake backend returns success; status line shows the username.             |
 | 3.2.7  | Vote happy path                                           | While logged in, vote-up key sends the expected POST to the fake backend; row re-renders with the upvote indicator. |
-| 3.2.8  | Reply happy path                                          | Reply key opens the editor (set to a stub script that writes a fixed body); submitted reply sends the expected POST. |
+| 3.2.8  | Reply happy path                                          | Reply key opens the editor (test sets `VISUAL` to a stub script that writes a fixed body — `reply_editor` checks `VISUAL` then `EDITOR` then `vi`); submitted reply sends the expected POST. |
 | 3.2.9  | Custom keymap from TOML                                   | Config defines a `[[keymap.custom_keymaps]]` block bound to `Z`; pressing `Z` opens a story view with the configured tag and sort. |
 | 3.2.10 | `-i <item_id>` direct entry                               | Binary opens directly into the comment view for the fixture item.                                                |
-| 3.2.11 | `--init-config light` / `--init-config dark`              | Each writes the embedded fixture to the resolved path, prints the success message, and exits 0.                  |
-| 3.2.12 | `--update-theme dark`                                     | The `[theme]` table is replaced; all other tables in the file are byte-identical.                                |
-| 3.2.13 | `--migrate-auth file` ↔ `--migrate-auth keyring`          | Round-trips correctly with the keyring mock backend; auth file shape and keyring contents match expectations.    |
+| 3.2.11 | `--init-config light` / `--init-config dark`              | Each writes the embedded default config to the resolved `--config` path, prints `Wrote default <theme> config to <path>`, and exits 0. |
+| 3.2.12 | `--update-theme dark`                                     | The `[theme]` table is replaced; all other tables in the file are byte-identical; binary prints `Updated dark theme in <path>` and exits 0. |
+| 3.2.13 | `--migrate-auth file` ↔ `--migrate-auth keyring`          | Round-trips correctly with the keyring mock backend; auth file shape and keyring contents match expectations; `MigrationOutcome::NoOp` path also tested by re-running with the same target. |
 | 3.2.14 | Quit (`q`)                                                | Process exits 0 within the `shutdown` timeout.                                                                   |
 | 3.2.15 | Network failure                                           | When the fake backend returns 500 for the front page, the UI surfaces an error result view rather than panicking. |
 
 ### 3.3 Fixture and harness discipline
 
 - Fixtures live under `hackernews_tim/tests/e2e/fixtures/`; stub editor
-  and browser scripts live under `hackernews_tim/tests/e2e/scripts/`
-  (used via `EDITOR` / `BROWSER` env-var overrides).
+  scripts live under `hackernews_tim/tests/e2e/scripts/` (used via
+  `VISUAL` / `EDITOR` env-var overrides). The "stub browser" is just
+  another script in `scripts/`, but it is wired in by overriding
+  `url_open_command` in the test's TOML config (the binary has no
+  `BROWSER` env-var hook).
 - Each test creates its own `tempfile::TempDir` for `HOME`, config, log,
-  and auth files. Tests must not share state.
+  and auth files. Tests must not share state. The `--test-threads=1`
+  flag in `make e2e` enforces serial execution (also required by the
+  keyring mock backend per §3.1.3).
 - No real network: every spawn sets `HN_ALGOLIA_BASE` and
   `HN_FIREBASE_BASE` to the fake backend's URL. A regression test
   asserts that no request reached the real production hosts during a
@@ -463,14 +495,23 @@ with `#[cfg(target_os = "linux")]`, and CI runs `make e2e` only on the
 
 - `make e2e` is green on the Linux CI job.
 - The real `hackernews_tim` binary is exercised end-to-end with no real
-  network access (HN backends mocked via `wiremock`).
+  network access (HN backends mocked via `wiremock`). A regression test
+  asserts no request reached the production hosts during a representative
+  run (per §3.3).
 - macOS / Windows CI jobs skip the e2e suite cleanly via
   `cfg(target_os = "linux")` — `cargo test` continues to pass on those
   platforms without any new dependencies.
-- Snapshots cover front page, comment view, article view, search view,
-  link dialog, login dialog, and at least one error path.
-- Every CLI flag (`-c`, `-a`, `-l`, `-i`, `--init-config`,
-  `--update-theme`, `--migrate-auth`) is touched by at least one test.
+- Snapshots taken in at least: 3.2.2 (front page), 3.2.3 (comment view),
+  3.2.4 (search view), 3.2.5 (article view + link dialog), 3.2.6 (login
+  dialog), and 3.2.15 (error path).
+- Every CLI flag is touched by at least one test:
+  - `-c`: 3.2.11 / 3.2.12 (resolved `--config` path).
+  - `-a`: 3.2.13 (resolved `--auth` path).
+  - `-l`: set by `spawn_app` for every test (per §3.1.1).
+  - `-i`: 3.2.10.
+  - `--init-config`: 3.2.11.
+  - `--update-theme`: 3.2.12.
+  - `--migrate-auth`: 3.2.13.
 
 ---
 
