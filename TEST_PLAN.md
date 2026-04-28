@@ -13,8 +13,8 @@ needs one focused refactor.
     inference, login classification.
   - `config/mod.rs` + `config/init.rs` (25 tests) — auth round-trips, file
     permissions, theme replacement, keyring pointer files.
-  - `view/find_bar.rs`, `view/comment_view.rs`, `model.rs` — small pure
-    helpers.
+  - `view/find_bar.rs`, `view/comment_view.rs`, `model.rs`,
+    `client/model.rs` — small pure helpers.
 - Untested or thinly tested: `client/query.rs`, `config/keybindings.rs`,
   `parser/{html,article,rcdom}.rs`, `utils.rs`, `reply_editor.rs`, every view
   module except `find_bar` and the `parse_link_index` helper in `comment_view`.
@@ -45,23 +45,17 @@ parameter so the test can pass a fixture.
 
 ### 1.2 `client/mod.rs` — additional private helpers
 
-The 71 existing tests cover comment parsing, vote/vouch state, and login
-classification. These private helpers are still untested:
+The 71 existing tests cover comment parsing, vote/vouch state, login
+classification, listing-path mapping, HN page-window math, reply-form
+parsing, threads score extraction, and profile parsing (karma, topcolor,
+showdead). These private helpers are still untested:
 
 | Target                                  | What to assert                                                                                  |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `dead_query_suffix(sep)`                | Builds the `&` / `?` prefixed `showdead=true` query suffix; returns empty string when disabled. |
-| `listing_path_for_view(tag, sort_mode)` | Returns `Some("news")` for `front_page`+`None`, `Some("newest")` for `story`+`Date`, etc.; returns `None` for unsupported tag/sort combinations. |
-| `hn_listing_pages_for_tui_page(p, sz)`  | Maps a TUI page index + page size to the (start, end) of HN's 30-per-page numbering.            |
+| `showdead_query_suffix(sep)`            | Builds the `&` / `?` prefixed `showdead=true` query suffix; returns empty string when disabled. |
 | `extract_textarea(body, "text")`        | Returns inner text of `<textarea name="text">…</textarea>`; `None` when missing; entity-decoded. |
 | `extract_hidden_input(body, "hmac")`    | Returns the `value=` of `<input type="hidden" name="hmac">`; `None` when missing.               |
-| `parse_reply_form(body)`                | Returns `Some(parent_text)` when the reply form is present; `None` otherwise.                   |
-| `classify_missing_reply_form(body)`     | Returns the right human-readable reason ("rate-limited", "logged out", "thread closed", etc.). |
 | `classify_post_reply_response(body)`    | `Ok` on success page; `Err` with specific messages for known failure pages.                      |
-| `parse_threads_score_map_into`          | Populates the per-comment `points` map from a `/threads` page; ignores rows without scores.    |
-| `parse_karma_from_profile`              | Pulls karma int from profile HTML; `None` when absent or malformed.                              |
-| `parse_topcolor_from_profile`           | Pulls topcolor hex; `None` when default.                                                         |
-| `parse_showdead_from_profile`           | True only when `showdead: yes` row is present.                                                  |
 
 Fixture HTML lives next to existing fixtures (already established pattern in
 `client/mod.rs` tests).
@@ -142,7 +136,7 @@ helper that takes config/user as parameters), then test:
 | `view/story_view.rs:374`                    | `story_row_text`                    | Lift the formatting half (excluding `self.stories[id]` lookup) into a pure helper.                                     |
 | `view/help_view.rs:183,199,234`             | `default_*_commands` factories      | Already pure — assert each list is non-empty and contains expected keymaps (e.g. `goto_front_page_view` is present in `default_view_navigation_commands`). |
 | `view/utils.rs:362`                         | `open_ith_link_in_browser`          | Split the index-validation half from the side-effect half; test the validator with `links=[]`, `i=0`, `i > links.len()`. |
-| `view/comment_view.rs:521`                  | `parse_link_index` (already tested) | Add edge cases: empty string after typed digits, leading zeros, integer overflow.                                      |
+| `view/comment_view.rs:521`                  | `parse_link_index` (already tested) | Add edge cases: leading zeros (e.g. `"007"` → `Some(7)`), integer overflow (`"9".repeat(40)` → `None`), negative input (`"-5"` → `None`). |
 
 ### 1.9 Doctests (optional, low priority)
 
