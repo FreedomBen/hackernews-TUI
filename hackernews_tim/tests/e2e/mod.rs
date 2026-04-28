@@ -202,6 +202,62 @@ impl AppHandle {
         screen_text(parser.screen())
     }
 
+    /// Current cursor `(row, col)` as reported by the vt100 parser.
+    /// Cursive parks the application cursor near the focused row of a
+    /// `SelectView`, but the position lags behind by one draw cycle on
+    /// some events — prefer [`focused_row`] for stable focus checks.
+    pub fn cursor_position(&self) -> (u16, u16) {
+        let parser = self.parser.lock().expect("vt100 parser mutex poisoned");
+        parser.screen().cursor_position()
+    }
+
+    /// First row index where Cursive has applied a focus-highlight
+    /// background — i.e. the topmost row of the focused `SelectView`
+    /// entry. Detected by sampling the mid-column background colour:
+    /// the body of the screen is rendered with the theme's default
+    /// background, and focused rows use a different shade.
+    ///
+    /// Returns `None` if the screen has no body area or all body rows
+    /// share a single background colour (no focus drawn yet).
+    pub fn focused_row(&self) -> Option<u16> {
+        use std::collections::HashMap;
+        let parser = self.parser.lock().expect("vt100 parser mutex poisoned");
+        let screen = parser.screen();
+        let (rows, cols) = screen.size();
+        let body_start: u16 = 2;
+        let body_end = rows.saturating_sub(2);
+        if body_start >= body_end {
+            return None;
+        }
+        let probe_col = cols / 2;
+        let mut counts: HashMap<(u8, u8, u8, u8), u32> = HashMap::new();
+        let mut row_keys: Vec<((u8, u8, u8, u8), u16)> = Vec::new();
+        for r in body_start..body_end {
+            let bg = screen.cell(r, probe_col).map(|c| c.bgcolor());
+            let bg = match bg {
+                Some(c) => c,
+                None => continue,
+            };
+            let key = match bg {
+                vt100::Color::Default => (0, 0, 0, 0),
+                vt100::Color::Idx(i) => (1, i, 0, 0),
+                vt100::Color::Rgb(r, g, b) => (2, r, g, b),
+            };
+            *counts.entry(key).or_insert(0) += 1;
+            row_keys.push((key, r));
+        }
+        let body_bg = counts
+            .iter()
+            .max_by_key(|(_, n)| *n)
+            .map(|(k, _)| *k)?;
+        for (key, r) in row_keys {
+            if key != body_bg {
+                return Some(r);
+            }
+        }
+        None
+    }
+
     /// Poll [`screen`] every 50 ms until `needle` appears or `timeout`
     /// elapses. On timeout, the error includes the last screen for
     /// post-mortem.
