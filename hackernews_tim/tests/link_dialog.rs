@@ -89,13 +89,21 @@ fn j_advances_focus_and_k_retreats() {
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
 
-    assert_eq!(focused_index(&mut harness), 0, "initial focus is the first link");
+    assert_eq!(
+        focused_index(&mut harness),
+        0,
+        "initial focus is the first link"
+    );
 
     harness.send(Event::Char('j'));
     harness.send(Event::Char('j'));
     harness.send(Event::Char('j'));
     harness.step_until_idle();
-    assert_eq!(focused_index(&mut harness), 3, "three j's advance focus to index 3");
+    assert_eq!(
+        focused_index(&mut harness),
+        3,
+        "three j's advance focus to index 3"
+    );
 
     harness.send(Event::Char('k'));
     harness.step_until_idle();
@@ -136,7 +144,11 @@ fn k_at_top_does_not_underflow() {
     harness.send(Event::Char('k'));
     harness.step_until_idle();
 
-    assert_eq!(focused_index(&mut harness), 0, "k from the top must stay at 0");
+    assert_eq!(
+        focused_index(&mut harness),
+        0,
+        "k from the top must stay at 0"
+    );
 }
 
 #[test]

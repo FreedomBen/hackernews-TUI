@@ -139,7 +139,9 @@ fn successful_login_writes_auth_file_and_swaps_dialog() {
     // The fake recorded the login attempt with the right credentials.
     let calls = fake.calls();
     assert!(
-        calls.iter().any(|c| matches!(c, FakeCall::Login(u, p) if u == "alice" && p == "hunter2")),
+        calls
+            .iter()
+            .any(|c| matches!(c, FakeCall::Login(u, p) if u == "alice" && p == "hunter2")),
         "expected FakeCall::Login(alice, hunter2); got {calls:?}"
     );
 
@@ -190,7 +192,9 @@ fn failed_login_shows_inline_error_and_keeps_dialog() {
 
     let calls = fake.calls();
     assert!(
-        calls.iter().any(|c| matches!(c, FakeCall::Login(u, p) if u == "alice" && p == "wrongpw")),
+        calls
+            .iter()
+            .any(|c| matches!(c, FakeCall::Login(u, p) if u == "alice" && p == "wrongpw")),
         "expected FakeCall::Login(alice, wrongpw); got {calls:?}"
     );
 

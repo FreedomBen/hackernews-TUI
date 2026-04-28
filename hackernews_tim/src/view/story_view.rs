@@ -414,6 +414,14 @@ impl StoryView {
         }
     }
 
+    /// Number of currently active find matches. Test-only accessor
+    /// so integration tests can observe `match_ids` without holding
+    /// the shared `FindStateRef`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn match_ids_len_for_test(&self) -> usize {
+        self.find_state.borrow().match_ids.len()
+    }
+
     /// Poll the shared find state and apply any pending signal.
     fn process_find_signal(&mut self) {
         let signal = self.find_state.borrow_mut().pending.take();
