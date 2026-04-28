@@ -1,0 +1,69 @@
+---
+source: hackernews_tim/tests/help_view.rs
+expression: "render_help::<StoryView>()"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                      ┌───────────────────────────────────────┤ Help Dialog ├────────────────────────────────────────┐
+                      │ Story navigation                                                                             │
+                      │ [j, down]    Focus the next story                                                            │
+                      │ [k, up]      Focus the previous story                                                        │
+                      │ {story_id} g Focus the {story_id}-th story                                                   │
+                      │                                                                                              │
+                      │ Paging/Filtering                                                                             │
+                      │ n Go to the next page                                                                        │
+                      │ p Go the previous page                                                                       │
+                      │ d Cycle story sort mode (not for `front_page` story views)                                   │
+                      │                                                                                              │
+                      │ Links                                                                                        │
+                      │ o Open in browser the focused story's article                                                │
+                      │ O Open in article view the focused story's article                                           │
+                      │ s Open in browser the focused story                                                          │
+                      │                                                                                              │
+                      │ View navigation                                                                              │
+                      │ enter            Go to the comment view associated with the focused story                    │
+                      │ [l, right]       Go to the next story tag                                                    │
+                      │ [h, left]        Go to the previous story tag                                                │
+                      │ [backspace, C-p] Go to the previous view                                                     │
+                      │ C-s              Go to search view                                                           │
+                      │ f1               Go to front page view                                                       │
+                      │ f2               Go to all stories view                                                      │
+                      │ f3               Go to ask HN view                                                           │
+                      │ f4               Go to show HN view                                                          │
+                      │ f5               Go to jobs view                                                             │
+                      │ f6               Go to your comments view (requires authentication)                          │
+                      │                                                                                              │
+                      │ Scrolling                                                                                    │
+                      │ [k, up]             Scroll up                                                                │
+                      │ [j, down]           Scroll down                                                              │
+                      │ [u, page_up, C-u]   Scroll page up                                                           │
+                      │ [d, page_down, C-d] Scroll page down                                                         │
+                      │ [g, home]           Scroll to top                                                            │
+                      │ [G, end]            Scroll to bottom                                                         │
+                      │                                                                                              │
+                      │ Others                                                                                       │
+                      │ v        Toggle upvoting the focused story                                                   │
+                      │ V        Toggle downvoting the focused story (requires downvote privilege)                   │
+                      │ !        Toggle vouching for the focused story (dead stories only, requires vouch privilege) │
+                      │ r        Reply to the focused story in $EDITOR (requires authentication)                     │
+                      │ [/, C-f] Find on page: highlight stories matching a query (enter jumps to next, esc clears)  │
+                      │ n        Jump to next find match (when a find session is active)                             │
+                      │ N        Jump to previous find match (when a find session is active)                         │
+                      │ ?        Open the help dialog                                                                │
+                      │ T        Open your comments on Hacker News in browser (requires authentication)              │
+                      │ [q, C-c] Quit the application                                                                │
+                      │ esc      Close a dialog                                                                      │
+                      │                                                                                              │
+                      └──────────────────────────────────────────────────────────────────────────────────────────────┘

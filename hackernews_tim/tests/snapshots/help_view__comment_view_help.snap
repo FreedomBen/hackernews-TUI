@@ -1,0 +1,70 @@
+---
+source: hackernews_tim/tests/help_view.rs
+expression: "render_help::<CommentView>()"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                     ┌────────────────────────────────────────┤ Help Dialog ├─────────────────────────────────────────┐
+                     │ Comment navigation                                                                             │
+                     │ [j, down]  Focus the next comment                                                              │
+                     │ [k, up]    Focus the previous comment                                                          │
+                     │ n          Focus the next sibling comment (wraps within the parent)                            │
+                     │ p          Focus the previous sibling comment (wraps within the parent)                        │
+                     │ [l, right] Focus the next comment at smaller or equal level                                    │
+                     │ [h, left]  Focus the previous comment at smaller or equal level                                │
+                     │ u          Focus the parent comment (if exists)                                                │
+                     │                                                                                                │
+                     │ Links                                                                                          │
+                     │ a           Open in browser the dicussed article                                               │
+                     │ A           Open in article view the dicussed article                                          │
+                     │ s           Open in browser the discussed story                                                │
+                     │ c           Open in browser the focused comment                                                │
+                     │ {link_id} o Open in browser the {link_id}-th link in the focused comment                       │
+                     │ {link_id} O Open in article view the {link_id}-th link in the focused comment                  │
+                     │                                                                                                │
+                     │ Scrolling                                                                                      │
+                     │ [k, up]             Scroll up                                                                  │
+                     │ [j, down]           Scroll down                                                                │
+                     │ [u, page_up, C-u]   Scroll page up                                                             │
+                     │ [d, page_down, C-d] Scroll page down                                                           │
+                     │ [g, home]           Scroll to top                                                              │
+                     │ [G, end]            Scroll to bottom                                                           │
+                     │                                                                                                │
+                     │ View navigation                                                                                │
+                     │ [backspace, C-p] Go to the previous view                                                       │
+                     │ C-s              Go to search view                                                             │
+                     │ f1               Go to front page view                                                         │
+                     │ f2               Go to all stories view                                                        │
+                     │ f3               Go to ask HN view                                                             │
+                     │ f4               Go to show HN view                                                            │
+                     │ f5               Go to jobs view                                                               │
+                     │ f6               Go to your comments view (requires authentication)                            │
+                     │                                                                                                │
+                     │ Others                                                                                         │
+                     │ tab      Toggle collapsing the focused item                                                    │
+                     │ [/, C-f] Find on page: highlight comments matching a query (enter jumps to next, esc clears)   │
+                     │ n        Jump to next find match (when a find session is active)                               │
+                     │ N        Jump to previous find match (when a find session is active)                           │
+                     │ v        Toggle upvoting the focused item                                                      │
+                     │ V        Toggle downvoting the focused item (requires downvote privilege)                      │
+                     │ !        Toggle vouching for the focused item (dead items only, requires vouch privilege)      │
+                     │ r        Reply to the focused item in $EDITOR (requires authentication)                        │
+                     │ e        Edit the focused comment in $EDITOR (your own comments only, requires authentication) │
+                     │ ?        Open the help dialog                                                                  │
+                     │ T        Open your comments on Hacker News in browser (requires authentication)                │
+                     │ [q, C-c] Quit the application                                                                  │
+                     │ esc      Close a dialog                                                                        │
+                     │                                                                                                │
+                     └────────────────────────────────────────────────────────────────────────────────────────────────┘

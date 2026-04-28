@@ -1,0 +1,57 @@
+---
+source: hackernews_tim/tests/help_view.rs
+expression: "render_help::<LinkDialog>()"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                            ┌─────────────────────────────────┤ Help Dialog ├─────────────────────────────────┐
+                            │ Link navigation                                                                 │
+                            │ [j, down] Focus next                                                            │
+                            │ [k, up]   Focus prev                                                            │
+                            │                                                                                 │
+                            │ Links                                                                           │
+                            │ [o, enter] Open in browser the focused link                                     │
+                            │ O          Open in article view the focused link                                │
+                            │                                                                                 │
+                            │ View navigation                                                                 │
+                            │ [backspace, C-p] Go to the previous view                                        │
+                            │ C-s              Go to search view                                              │
+                            │ f1               Go to front page view                                          │
+                            │ f2               Go to all stories view                                         │
+                            │ f3               Go to ask HN view                                              │
+                            │ f4               Go to show HN view                                             │
+                            │ f5               Go to jobs view                                                │
+                            │ f6               Go to your comments view (requires authentication)             │
+                            │                                                                                 │
+                            │ Others                                                                          │
+                            │ ?        Open the help dialog                                                   │
+                            │ T        Open your comments on Hacker News in browser (requires authentication) │
+                            │ [q, C-c] Quit the application                                                   │
+                            │ esc      Close a dialog                                                         │
+                            │                                                                                 │
+                            └─────────────────────────────────────────────────────────────────────────────────┘

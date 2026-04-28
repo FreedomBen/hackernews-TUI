@@ -1,0 +1,61 @@
+---
+source: hackernews_tim/tests/help_view.rs
+expression: "render_help::<ArticleView>()"
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                       ┌──────────────────────────────────────┤ Help Dialog ├──────────────────────────────────────┐
+                       │ Scrolling                                                                                 │
+                       │ [k, up]             Scroll up                                                             │
+                       │ [j, down]           Scroll down                                                           │
+                       │ [u, page_up, C-u]   Scroll page up                                                        │
+                       │ [d, page_down, C-d] Scroll page down                                                      │
+                       │ [g, home]           Scroll to top                                                         │
+                       │ [G, end]            Scroll to bottom                                                      │
+                       │                                                                                           │
+                       │ Links                                                                                     │
+                       │ a           Open the current article in browser                                           │
+                       │ {link_id} o Open in browser the {link_id}-th link                                         │
+                       │ {link_id} O Open in article view the {link_id}-th link                                    │
+                       │ l           Open a link dialog                                                            │
+                       │                                                                                           │
+                       │ View navigation                                                                           │
+                       │ [backspace, C-p] Go to the previous view                                                  │
+                       │ C-s              Go to search view                                                        │
+                       │ f1               Go to front page view                                                    │
+                       │ f2               Go to all stories view                                                   │
+                       │ f3               Go to ask HN view                                                        │
+                       │ f4               Go to show HN view                                                       │
+                       │ f5               Go to jobs view                                                          │
+                       │ f6               Go to your comments view (requires authentication)                       │
+                       │                                                                                           │
+                       │ Others                                                                                    │
+                       │ [/, C-f] Find on page: highlight matches in the article (enter jumps to next, esc clears) │
+                       │ n        Jump to next find match (when a find session is active)                          │
+                       │ N        Jump to previous find match (when a find session is active)                      │
+                       │ ?        Open the help dialog                                                             │
+                       │ T        Open your comments on Hacker News in browser (requires authentication)           │
+                       │ [q, C-c] Quit the application                                                             │
+                       │ esc      Close a dialog                                                                   │
+                       │                                                                                           │
+                       └───────────────────────────────────────────────────────────────────────────────────────────┘
