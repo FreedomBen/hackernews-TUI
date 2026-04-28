@@ -26,21 +26,11 @@ use cursive::views::{NamedView, OnEventView};
 use cursive::Cursive;
 
 use hackernews_tim::client::fake::FakeHnApi;
-use hackernews_tim::client::{init_test_user_info, HnApi};
-use hackernews_tim::config::init_test_config;
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::client::HnApi;
+use hackernews_tim::test_support::{ensure_globals_initialised, leak_fake_api, PuppetHarness};
 use hackernews_tim::view::link_dialog::{construct_link_dialog_main_view, LinkDialog};
 
 const NAME: &str = "link_dialog_outer";
-
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn make_fake_api() -> &'static FakeHnApi {
-    Box::leak(Box::new(FakeHnApi::new()))
-}
 
 fn fixture_links() -> Vec<String> {
     vec![
@@ -72,7 +62,7 @@ fn focused_index(harness: &mut PuppetHarness) -> usize {
 fn renders_dialog_with_five_links_snapshot() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -84,7 +74,7 @@ fn renders_dialog_with_five_links_snapshot() {
 fn j_advances_focus_and_k_retreats() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -114,7 +104,7 @@ fn j_advances_focus_and_k_retreats() {
 fn arrow_keys_drive_the_same_focus_path_as_j_k() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -135,7 +125,7 @@ fn k_at_top_does_not_underflow() {
     // `focus_id > 0` before decrementing; this test pins that guard.
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -155,7 +145,7 @@ fn k_at_top_does_not_underflow() {
 fn esc_pops_the_dialog_layer() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -177,7 +167,7 @@ fn renders_first_and_last_link_text() {
     // unchanged for these short fixtures, so the URL appears verbatim).
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_link_dialog(&mut siv, &fixture_links(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();

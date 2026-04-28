@@ -31,7 +31,7 @@ use hackernews_tim::client::{
     init_test_user_info, HnApi, StoryNumericFilters, StorySortMode, UserInfo,
 };
 use hackernews_tim::config::{init_test_config_with, AuthStorage, Config, CustomKeyMap, Keys};
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{leak_fake_api, PuppetHarness};
 use hackernews_tim::view::set_up_global_callbacks;
 
 const CUSTOM_KEY: char = 'r';
@@ -55,10 +55,6 @@ fn ensure_globals_initialised() {
             showdead: false,
         }));
     });
-}
-
-fn make_fake_api() -> &'static FakeHnApi {
-    Box::leak(Box::new(FakeHnApi::new()))
 }
 
 fn build_harness_with_callbacks(fake: &'static FakeHnApi) -> PuppetHarness {
@@ -117,7 +113,7 @@ fn assert_get_stories_by_tag(fake: &FakeHnApi, tag: &str, expected_sort: StorySo
 #[test]
 fn f1_opens_front_page_story_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F1));
@@ -129,7 +125,7 @@ fn f1_opens_front_page_story_view() {
 #[test]
 fn f2_opens_all_stories_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F2));
@@ -143,7 +139,7 @@ fn f2_opens_all_stories_view() {
 #[test]
 fn f3_opens_ask_hn_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F3));
@@ -155,7 +151,7 @@ fn f3_opens_ask_hn_view() {
 #[test]
 fn f4_opens_show_hn_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F4));
@@ -167,7 +163,7 @@ fn f4_opens_show_hn_view() {
 #[test]
 fn f5_opens_jobs_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F5));
@@ -180,7 +176,7 @@ fn f5_opens_jobs_view() {
 #[test]
 fn f6_opens_threads_view_when_logged_in() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Key(Key::F6));
@@ -197,7 +193,7 @@ fn f6_opens_threads_view_when_logged_in() {
 #[test]
 fn custom_keymap_opens_configured_story_view() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     harness.send(Event::Char(CUSTOM_KEY));
@@ -210,7 +206,7 @@ fn custom_keymap_opens_configured_story_view() {
 #[test]
 fn open_help_dialog_pushes_help_layer() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     let layers_before = harness.cursive_mut().screen_mut().len();
@@ -232,7 +228,7 @@ fn open_help_dialog_pushes_help_layer() {
 #[test]
 fn quit_key_signals_cursive_shutdown() {
     ensure_globals_initialised();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let mut harness = build_harness_with_callbacks(fake);
 
     assert!(

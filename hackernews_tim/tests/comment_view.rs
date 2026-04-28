@@ -38,18 +38,11 @@ use cursive::view::Nameable;
 use cursive::views::NamedView;
 use cursive::Cursive;
 
-use hackernews_tim::client::init_test_user_info;
-use hackernews_tim::config::init_test_config;
 use hackernews_tim::model::{Comment, HnItem, PageData, Story};
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{ensure_globals_initialised, PuppetHarness};
 use hackernews_tim::view::comment_view::{CommentView, NavigationDirection};
 use hackernews_tim::view::find_bar::FindState;
 use hackernews_tim::view::traits::ListViewContainer;
-
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
 
 fn fixture_root_story() -> Story {
     Story {

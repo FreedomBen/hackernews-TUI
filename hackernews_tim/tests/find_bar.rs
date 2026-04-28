@@ -33,49 +33,23 @@ use cursive::view::Nameable;
 use cursive::views::{NamedView, OnEventView};
 use cursive::Cursive;
 
-use hackernews_tim::client::fake::FakeHnApi;
-use hackernews_tim::client::{init_test_user_info, HnApi};
-use hackernews_tim::config::init_test_config;
+use hackernews_tim::client::HnApi;
 use hackernews_tim::model::Story;
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{ensure_globals_initialised, leak_fake_api, make_story, PuppetHarness};
 use hackernews_tim::view::find_bar::{FindState, FindStateRef};
 use hackernews_tim::view::story_view::{construct_story_main_view, StoryView};
 use hackernews_tim::view::traits::ListViewContainer;
 
 const NAME: &str = "story_view_for_find_bar";
 
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn make_fake_api() -> &'static dyn HnApi {
-    Box::leak(Box::<FakeHnApi>::default())
-}
-
-fn fixture_story(id: u32, title: &str) -> Story {
-    Story {
-        id,
-        url: format!("https://example.com/{id}"),
-        author: "alice".to_string(),
-        points: 10,
-        num_comments: 0,
-        time: 1_700_000_000,
-        title: title.to_string(),
-        content: String::new(),
-        dead: false,
-        flagged: false,
-    }
-}
-
 /// Five stories where "alpha" matches rows 0, 2, and 4.
 fn fixture_stories() -> Vec<Story> {
     vec![
-        fixture_story(101, "alpha first"),
-        fixture_story(102, "bravo second"),
-        fixture_story(103, "alpha third"),
-        fixture_story(104, "charlie fourth"),
-        fixture_story(105, "alpha fifth"),
+        make_story(101, "alpha first"),
+        make_story(102, "bravo second"),
+        make_story(103, "alpha third"),
+        make_story(104, "charlie fourth"),
+        make_story(105, "alpha fifth"),
     ]
 }
 
@@ -83,7 +57,7 @@ fn fixture_stories() -> Vec<Story> {
 /// `FindStateRef` so the test can poke it externally if needed.
 fn build_named_main_view(siv: &mut Cursive) -> FindStateRef {
     let cb_sink = siv.cb_sink().clone();
-    let api = make_fake_api();
+    let api: &'static dyn HnApi = leak_fake_api();
     let find_state = FindState::new_ref();
     let main_view = construct_story_main_view(
         fixture_stories(),

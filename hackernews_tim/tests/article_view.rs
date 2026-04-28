@@ -21,20 +21,10 @@ use cursive::views::{NamedView, OnEventView};
 use cursive::Cursive;
 
 use hackernews_tim::client::fake::{FakeCall, FakeHnApi};
-use hackernews_tim::client::{init_test_user_info, HnApi};
-use hackernews_tim::config::init_test_config;
+use hackernews_tim::client::HnApi;
 use hackernews_tim::model::Article;
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{ensure_globals_initialised, leak_fake_api, PuppetHarness};
 use hackernews_tim::view::article_view::{construct_article_main_view, ArticleView};
-
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn make_fake_api() -> &'static FakeHnApi {
-    Box::leak(Box::new(FakeHnApi::new()))
-}
 
 fn fixture_article() -> Article {
     Article {
@@ -91,7 +81,7 @@ fn article_links(harness: &mut PuppetHarness) -> Vec<String> {
 fn renders_article_with_links_snapshot() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, fixture_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -103,7 +93,7 @@ fn renders_article_with_links_snapshot() {
 fn empty_article_does_not_panic() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let article = Article {
         title: "Empty".to_string(),
         url: "https://example.com/empty".to_string(),
@@ -126,7 +116,7 @@ fn empty_article_does_not_panic() {
 fn parses_links_in_document_order() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, fixture_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -147,7 +137,7 @@ fn parses_links_in_document_order() {
 fn down_key_scrolls_article_body() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, long_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -170,7 +160,7 @@ fn down_key_scrolls_article_body() {
 fn l_opens_link_dialog_with_parsed_links() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, fixture_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -219,7 +209,7 @@ fn plain_article() -> Article {
 fn slash_opens_find_dialog() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, fixture_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -237,7 +227,7 @@ fn slash_opens_find_dialog() {
 fn typing_query_populates_match_ids() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, plain_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -270,7 +260,7 @@ fn typing_query_populates_match_ids() {
 fn esc_in_find_dialog_clears_highlights() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_named_article_view(&mut siv, plain_article(), fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();

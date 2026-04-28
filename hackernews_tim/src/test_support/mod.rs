@@ -11,15 +11,27 @@
 //!   via [`PuppetHarness::screen_text`] (or the raw [`ObservedScreen`]
 //!   via [`PuppetHarness::screen`]).
 //!
+//! Also exposes the small set of fixture/setup helpers integration
+//! tests reach for repeatedly — see [`ensure_globals_initialised`],
+//! [`leak_fake_api`], [`make_story`], and the [`fixtures`] submodule
+//! for file-based fixture loading.
+//!
 //! Gated on `cfg(any(test, feature = "test-support"))`, mirroring
 //! [`crate::client::fake`]. Integration tests under `tests/` must enable
 //! `--features test-support` to see this module.
+
+pub mod fixtures;
 
 use crossbeam_channel::{Receiver, Sender};
 use cursive::backends::puppet::observed::{ObservedPieceInterface, ObservedScreen};
 use cursive::backends::puppet::Backend as PuppetBackend;
 use cursive::event::Event;
 use cursive::{Cursive, CursiveRunner, Vec2};
+
+use crate::client::fake::FakeHnApi;
+use crate::client::init_test_user_info;
+use crate::config::init_test_config;
+use crate::model::Story;
 
 /// Default puppet screen size — wide enough that typical story rows
 /// don't wrap, tall enough to render several rows plus a status bar.
@@ -138,6 +150,57 @@ pub fn flatten_screen(screen: &ObservedScreen) -> String {
         }
     }
     lines.join("\n")
+}
+
+/// Initialise the process-global test config and an empty user info.
+///
+/// View constructors and most renderers indirectly read
+/// [`crate::config::get_config_theme`] and [`crate::client::get_user_info`]
+/// — call this before building a view in a test. Both underlying
+/// initialisers are guarded by `OnceCell` so repeated calls are safe.
+pub fn ensure_globals_initialised() {
+    init_test_config();
+    init_test_user_info(None);
+}
+
+/// Allocate a fresh [`FakeHnApi`] and return a `'static` reference.
+///
+/// View constructors take `&'static dyn HnApi` — leaking is the
+/// simplest way to get the required lifetime in a test. The `'static
+/// FakeHnApi` reference is what lets the test inspect `fake.calls()`
+/// after handing the fake into the view; coerce to `&'static dyn HnApi`
+/// at the call site:
+///
+/// ```ignore
+/// let fake = leak_fake_api();
+/// let api: &'static dyn HnApi = fake;
+/// ```
+pub fn leak_fake_api() -> &'static FakeHnApi {
+    Box::leak(Box::new(FakeHnApi::new()))
+}
+
+/// Build a [`Story`] with sensible defaults: `alice` author, 10 points,
+/// 0 comments, fixed timestamp, `https://example.com/{id}` URL,
+/// no content, not dead/flagged.
+///
+/// Override fields with struct-update syntax:
+///
+/// ```ignore
+/// Story { points: 250, num_comments: 12, ..make_story(101, "Rust 2.0") }
+/// ```
+pub fn make_story(id: u32, title: impl Into<String>) -> Story {
+    Story {
+        id,
+        url: format!("https://example.com/{id}"),
+        author: "alice".to_string(),
+        points: 10,
+        num_comments: 0,
+        time: 1_700_000_000,
+        title: title.into(),
+        content: String::new(),
+        dead: false,
+        flagged: false,
+    }
 }
 
 #[cfg(test)]

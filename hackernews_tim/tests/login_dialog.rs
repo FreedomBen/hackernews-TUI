@@ -20,22 +20,13 @@ use cursive::views::EditView;
 use cursive::Cursive;
 
 use hackernews_tim::client::fake::{FakeCall, FakeHnApi};
-use hackernews_tim::client::{init_test_user_info, HnApi};
-use hackernews_tim::config::{init_test_config, Auth, AuthStorage};
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::client::HnApi;
+use hackernews_tim::config::{Auth, AuthStorage};
+use hackernews_tim::test_support::{ensure_globals_initialised, leak_fake_api, PuppetHarness};
 use hackernews_tim::view::login_dialog::get_login_dialog;
 
 const USERNAME_ID: &str = "login_dialog_username";
 const PASSWORD_ID: &str = "login_dialog_password";
-
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn make_fake_api() -> &'static FakeHnApi {
-    Box::leak(Box::new(FakeHnApi::new()))
-}
 
 /// Per-test auth file path under the system temp dir. The pid +
 /// nanos suffix makes it unique enough that two parallel test runs
@@ -83,7 +74,7 @@ fn empty_input_shows_status_and_keeps_dialog() {
     let _ = std::fs::remove_file(&path);
 
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_login_dialog(&mut siv, fake, &path);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -124,7 +115,7 @@ fn successful_login_writes_auth_file_and_swaps_dialog() {
     let _ = std::fs::remove_file(&path);
 
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     fake.set_session_cookie(Some("alice&abcdef0123".to_string()));
     add_login_dialog(&mut siv, fake, &path);
     let mut harness = PuppetHarness::new(siv);
@@ -177,7 +168,7 @@ fn failed_login_shows_inline_error_and_keeps_dialog() {
     let _ = std::fs::remove_file(&path);
 
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     fake.fail_login();
     add_login_dialog(&mut siv, fake, &path);
     let mut harness = PuppetHarness::new(siv);
@@ -225,7 +216,7 @@ fn cancel_button_pops_the_dialog_without_login_call() {
     let _ = std::fs::remove_file(&path);
 
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     add_login_dialog(&mut siv, fake, &path);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();

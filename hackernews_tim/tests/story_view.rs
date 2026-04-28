@@ -27,47 +27,37 @@ use cursive::view::Nameable;
 use cursive::views::{NamedView, OnEventView};
 use cursive::Cursive;
 
-use hackernews_tim::client::fake::FakeHnApi;
-use hackernews_tim::client::{init_test_user_info, HnApi, StoryNumericFilters, StorySortMode};
-use hackernews_tim::config::{get_global_keymap, init_test_config};
+use hackernews_tim::client::HnApi;
+use hackernews_tim::client::{StoryNumericFilters, StorySortMode};
+use hackernews_tim::config::get_global_keymap;
 use hackernews_tim::model::Story;
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{
+    ensure_globals_initialised, leak_fake_api, make_story, PuppetHarness,
+};
 use hackernews_tim::view::find_bar::{FindSignal, FindState, FindStateRef};
 use hackernews_tim::view::story_view::{
     construct_story_main_view, construct_story_view, StoryView,
 };
 use hackernews_tim::view::traits::ListViewContainer;
 
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn fixture_story(id: u32, title: &str, author: &str, points: u32) -> Story {
-    Story {
-        id,
-        url: format!("https://example.com/{id}"),
-        author: author.to_string(),
-        points,
-        num_comments: 0,
-        time: 1_700_000_000,
-        title: title.to_string(),
-        content: String::new(),
-        dead: false,
-        flagged: false,
-    }
-}
-
 fn fixture_stories() -> Vec<Story> {
     vec![
-        fixture_story(101, "Rust 1.99 released", "alice", 250),
-        fixture_story(102, "Cursive 0.20 hits stable", "bob", 90),
-        fixture_story(103, "Hacker News test fixtures", "carol", 47),
+        Story {
+            author: "alice".into(),
+            points: 250,
+            ..make_story(101, "Rust 1.99 released")
+        },
+        Story {
+            author: "bob".into(),
+            points: 90,
+            ..make_story(102, "Cursive 0.20 hits stable")
+        },
+        Story {
+            author: "carol".into(),
+            points: 47,
+            ..make_story(103, "Hacker News test fixtures")
+        },
     ]
-}
-
-fn make_fake_api() -> &'static dyn HnApi {
-    Box::leak(Box::<FakeHnApi>::default())
 }
 
 /// Build a fresh main view (no title bar / footer) wrapped in a
@@ -76,7 +66,7 @@ fn make_fake_api() -> &'static dyn HnApi {
 /// same `Rc` the view holds, so external mutation drives the view's
 /// next layout pass.
 fn build_named_main_view(siv: &mut Cursive, stories: Vec<Story>) -> FindStateRef {
-    let api = make_fake_api();
+    let api: &'static dyn HnApi = leak_fake_api();
     let find_state = FindState::new_ref();
     let main_view = construct_story_main_view(
         stories,
@@ -100,7 +90,7 @@ fn renders_three_story_fixtures() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
     let cb_sink = siv.cb_sink().clone();
-    let api = make_fake_api();
+    let api: &'static dyn HnApi = leak_fake_api();
     siv.add_layer(construct_story_view(
         fixture_stories(),
         HashMap::new(),
@@ -128,7 +118,7 @@ fn empty_story_list_does_not_panic() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
     let cb_sink = siv.cb_sink().clone();
-    let api = make_fake_api();
+    let api: &'static dyn HnApi = leak_fake_api();
     siv.add_layer(construct_story_view(
         Vec::new(),
         HashMap::new(),
@@ -334,7 +324,10 @@ fn esc_key_propagates_to_find_outer_layer() {
 
 fn many_fixture_stories(n: u32) -> Vec<Story> {
     (0..n)
-        .map(|i| fixture_story(1000 + i, &format!("Story #{i}"), "alice", 10 + i))
+        .map(|i| Story {
+            points: 10 + i,
+            ..make_story(1000 + i, format!("Story #{i}"))
+        })
         .collect()
 }
 

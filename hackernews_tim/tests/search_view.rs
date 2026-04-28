@@ -32,43 +32,17 @@ use cursive::views::{NamedView, OnEventView};
 use cursive::Cursive;
 
 use hackernews_tim::client::fake::{FakeCall, FakeHnApi};
-use hackernews_tim::client::{init_test_user_info, HnApi};
-use hackernews_tim::config::init_test_config;
+use hackernews_tim::client::HnApi;
 use hackernews_tim::model::Story;
-use hackernews_tim::test_support::PuppetHarness;
+use hackernews_tim::test_support::{
+    ensure_globals_initialised, leak_fake_api, make_story, PuppetHarness,
+};
 use hackernews_tim::view::search_view::{
     construct_search_main_view, construct_search_view, SearchView,
 };
 
-fn ensure_globals_initialised() {
-    init_test_config();
-    init_test_user_info(None);
-}
-
-fn fixture_story(id: u32, title: &str) -> Story {
-    Story {
-        id,
-        url: format!("https://example.com/{id}"),
-        author: "alice".to_string(),
-        points: 10,
-        num_comments: 0,
-        time: 1_700_000_000,
-        title: title.to_string(),
-        content: String::new(),
-        dead: false,
-        flagged: false,
-    }
-}
-
 fn fixture_stories() -> Vec<Story> {
-    vec![
-        fixture_story(101, "Result one"),
-        fixture_story(102, "Result two"),
-    ]
-}
-
-fn make_fake_api() -> &'static FakeHnApi {
-    Box::leak(Box::new(FakeHnApi::new()))
+    vec![make_story(101, "Result one"), make_story(102, "Result two")]
 }
 
 /// Populate the fake with fixture results for every (query, by_date,
@@ -138,7 +112,7 @@ fn search_text(harness: &mut PuppetHarness) -> String {
 fn renders_initial_state_snapshot() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     let cb_sink = siv.cb_sink().clone();
     let api: &'static dyn HnApi = fake;
     siv.add_layer(construct_search_view(api, cb_sink));
@@ -156,7 +130,7 @@ fn renders_initial_state_snapshot() {
 fn construction_does_not_panic_with_empty_state() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -170,7 +144,7 @@ fn construction_does_not_panic_with_empty_state() {
 fn typing_query_updates_search_text() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -187,7 +161,7 @@ fn typing_query_updates_search_text() {
 fn typing_query_triggers_get_matched_stories_call() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
     harness.step_until_idle();
@@ -214,7 +188,7 @@ fn esc_then_d_in_navigation_mode_toggles_by_date() {
     // toggles `by_date` and re-fetches.
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     populate_default_results(fake);
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
@@ -242,7 +216,7 @@ fn esc_then_d_in_navigation_mode_toggles_by_date() {
 fn next_page_in_navigation_advances_page() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     populate_default_results(fake);
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
@@ -270,7 +244,7 @@ fn next_page_in_navigation_advances_page() {
 fn prev_page_at_zero_does_not_refetch() {
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     populate_default_results(fake);
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
@@ -299,7 +273,7 @@ fn i_returns_to_search_mode_so_chars_become_input() {
     // cycle_sort_mode).
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     populate_default_results(fake);
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);
@@ -324,7 +298,7 @@ fn find_dialog_only_opens_in_navigation_mode() {
     // find-on-page dialog as a new layer.
     ensure_globals_initialised();
     let mut siv = Cursive::new();
-    let fake = make_fake_api();
+    let fake = leak_fake_api();
     populate_default_results(fake);
     build_named_search_view(&mut siv, fake);
     let mut harness = PuppetHarness::new(siv);

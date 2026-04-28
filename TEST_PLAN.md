@@ -51,7 +51,7 @@ truth for individual cases.
 - [x] 2.2.4 ArticleView tests
 - [x] 2.2.5 LinkDialog / HelpView / LoginDialog / find-bar tests
 - [x] 2.2.6 Global navigation + post-event hook tests
-- [ ] 2.3 Fixture discipline (`tests/fixtures/`, `FakeHnApi` per-test config)
+- [x] 2.3 Fixture discipline (`tests/fixtures/`, `FakeHnApi` per-test config)
 - [ ] Phase 2 acceptance — view tests run with no network; `HnApi` is the only data dependency in `view/*`
 
 ---
