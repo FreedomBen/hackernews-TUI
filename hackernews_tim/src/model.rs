@@ -350,6 +350,22 @@ impl Story {
 }
 
 impl HnItem {
+    /// Build a placeholder root item for views that don't have a real story
+    /// or comment to anchor on (e.g. the in-TUI threads view). The given
+    /// `text` is rendered verbatim — no byline, points, or `N comments`
+    /// suffix is generated.
+    pub fn synthetic_root(text: StyledString) -> Self {
+        HnItem {
+            id: 0,
+            level: 0,
+            display_state: DisplayState::Normal,
+            links: Vec::new(),
+            author: None,
+            text: text.clone(),
+            minimized_text: text,
+        }
+    }
+
     /// Plain-text source of the item's rendered body, stripped of styling.
     /// Used when quoting the item into `$EDITOR` for replies.
     pub fn plain_text(&self) -> String {

@@ -189,3 +189,122 @@ impl From<CommentResponse> for Vec<Comment> {
         [vec![comment], children].concat()
     }
 }
+
+/// One hit returned by HN Algolia's `search_by_date?tags=comment,author_<u>`
+/// listing — a comment owned by a specific author. Carries the parent
+/// story's id/title so the threads view can render a "re: …" header that
+/// links back to the discussion.
+#[derive(Debug, Deserialize)]
+pub struct UserCommentResponse {
+    #[serde(rename(deserialize = "objectID"))]
+    #[serde(deserialize_with = "parse_id")]
+    id: u32,
+
+    author: Option<String>,
+    comment_text: Option<String>,
+
+    #[serde(rename(deserialize = "created_at_i"))]
+    time: u64,
+
+    story_id: Option<u32>,
+    story_title: Option<String>,
+
+    #[serde(default)]
+    #[serde(deserialize_with = "parse_null_default")]
+    dead: bool,
+
+    #[serde(default)]
+    #[serde(deserialize_with = "parse_null_default")]
+    flagged: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UserCommentsResponse {
+    pub hits: Vec<UserCommentResponse>,
+}
+
+impl From<UserCommentsResponse> for Vec<Comment> {
+    fn from(r: UserCommentsResponse) -> Self {
+        r.hits
+            .into_iter()
+            .filter_map(|h| {
+                let author = h.author?;
+                let text = h.comment_text?;
+                // Prepend a "re: <story title>" header that links back to
+                // the parent thread on HN. The link is plain HTML so it
+                // flows through `parse_hn_html_text` and ends up in the
+                // CommentView's link dialog (default `o`/`O`).
+                let header = match h.story_id {
+                    Some(sid) => {
+                        let title = h
+                            .story_title
+                            .as_deref()
+                            .map(html_escape::encode_text)
+                            .map(|s| s.into_owned())
+                            .unwrap_or_else(|| "parent thread".to_string());
+                        format!(
+                            "<p><i>re: <a href=\"{}/item?id={sid}\">{title}</a></i></p>",
+                            super::HN_HOST_URL
+                        )
+                    }
+                    None => String::new(),
+                };
+                let content = format!("{header}{text}");
+                Some(Comment {
+                    id: h.id,
+                    level: 0,
+                    n_children: 0,
+                    time: h.time,
+                    author,
+                    content: decode_html(&content),
+                    dead: h.dead,
+                    flagged: h.flagged,
+                })
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn user_comments_response_parses_and_prepends_story_header() {
+        let json = r#"{
+            "hits": [
+                {
+                    "objectID": "12345",
+                    "author": "freedomben",
+                    "comment_text": "the body",
+                    "created_at_i": 100,
+                    "story_id": 9999,
+                    "story_title": "A <em>great</em> story"
+                }
+            ]
+        }"#;
+        let parsed: UserCommentsResponse = serde_json::from_str(json).unwrap();
+        let comments: Vec<Comment> = parsed.into();
+        assert_eq!(comments.len(), 1);
+        let c = &comments[0];
+        assert_eq!(c.id, 12345);
+        assert_eq!(c.author, "freedomben");
+        assert_eq!(c.level, 0);
+        // Header links to the parent story and the body is preserved.
+        assert!(c.content.contains("/item?id=9999"));
+        assert!(c.content.contains("the body"));
+    }
+
+    #[test]
+    fn user_comments_response_drops_hits_missing_required_fields() {
+        let json = r#"{
+            "hits": [
+                { "objectID": "1", "author": null,    "comment_text": "x", "created_at_i": 1 },
+                { "objectID": "2", "author": "alice", "comment_text": null, "created_at_i": 2 }
+            ]
+        }"#;
+        let parsed: UserCommentsResponse = serde_json::from_str(json).unwrap();
+        let comments: Vec<Comment> = parsed.into();
+        assert!(comments.is_empty());
+    }
+}

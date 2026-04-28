@@ -819,3 +819,16 @@ pub fn construct_and_add_new_comment_view(
     }
     s.screen_mut().add_transparent_layer(Layer::new(async_view));
 }
+
+/// Build a comment view of the given user's recent comments — the in-TUI
+/// equivalent of HN's `/threads?id=<u>` page. Each entry includes a "re:
+/// <story title>" header link to the parent thread.
+pub fn construct_and_add_new_threads_view(
+    s: &mut Cursive,
+    client: &'static client::HNClient,
+    username: String,
+    page: usize,
+) {
+    let async_view = async_view::construct_threads_view_async(s, client, username, page);
+    s.screen_mut().add_transparent_layer(Layer::new(async_view));
+}

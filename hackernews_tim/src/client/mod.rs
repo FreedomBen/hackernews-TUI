@@ -402,6 +402,62 @@ impl HNClient {
         Ok(response.into())
     }
 
+    /// Build a [`PageData`] backed by the given user's recent comments,
+    /// fetched via HN Algolia's `search_by_date?tags=comment,author_<u>`
+    /// listing. Powers the in-TUI threads view, which mirrors HN's own
+    /// `/threads?id=<u>` page.
+    ///
+    /// The returned `PageData` has a synthetic `root_item` (no real story)
+    /// and an empty vote/vouch state — voting on threads-view comments
+    /// would require fetching each parent story's HN page, which we skip
+    /// for v1. Each comment is at level 0 with a "re: <story_title>"
+    /// header link to the parent thread.
+    pub fn get_user_threads_page(&self, username: &str, page: usize) -> Result<PageData> {
+        let page_size = config::page_size();
+        let request_url = format!(
+            "{HN_ALGOLIA_PREFIX}/search_by_date?tags=comment,author_{username}\
+             &hitsPerPage={page_size}&page={page}",
+        );
+        let response = log!(
+            self.client
+                .get(&request_url)
+                .call()?
+                .into_json::<UserCommentsResponse>()?,
+            format!("get user threads (user={username}, page={page}) using {request_url}")
+        );
+
+        let comments: Vec<Comment> = response.into();
+
+        // Push everything to the receiver in one batch and drop the sender.
+        // CommentView polls the channel until it's both empty and closed,
+        // so a single send + drop drains naturally on the consumer side.
+        let (sender, receiver) = crossbeam_channel::bounded(1);
+        if !comments.is_empty() {
+            sender.send(comments).ok();
+        }
+        drop(sender);
+
+        let title = format!("Threads — {username}");
+        let url = format!("{HN_HOST_URL}/threads?id={username}");
+
+        let header_style = config::get_config_theme().component_style.username;
+        let mut header_text = StyledString::styled(title.clone(), header_style);
+        header_text.append_plain(format!(
+            "\nRecent comments by {username} (page {page}). Press `o` on a \
+             comment to open its parent thread on Hacker News."
+        ));
+        let root_item = HnItem::synthetic_root(header_text);
+
+        Ok(PageData {
+            title,
+            url,
+            root_item,
+            comment_receiver: receiver,
+            vote_state: HashMap::new(),
+            vouch_state: HashMap::new(),
+        })
+    }
+
     /// Reorder a list of stories to follow the same order as another list of story IDs.
     ///
     /// Needs to do this because stories returned by Algolia APIs are sorted by `points`,

@@ -25,6 +25,33 @@ pub fn construct_comment_view_async(
     .full_screen()
 }
 
+pub fn construct_threads_view_async(
+    siv: &mut Cursive,
+    client: &'static client::HNClient,
+    username: String,
+    page: usize,
+) -> impl View {
+    AsyncView::new_with_bg_creator(
+        siv,
+        {
+            let username = username.clone();
+            move || Ok(client.get_user_threads_page(&username, page))
+        },
+        move |result: Result<_>| {
+            let username = username.clone();
+            ResultView::new(
+                result.with_context(move || {
+                    format!("failed to load threads for user {username} (page {page})")
+                }),
+                |data| comment_view::construct_comment_view(client, data),
+            )
+        },
+    )
+    .with_animation_fn(animation)
+    .align_center()
+    .full_screen()
+}
+
 pub fn construct_story_view_async(
     siv: &mut Cursive,
     client: &'static client::HNClient,

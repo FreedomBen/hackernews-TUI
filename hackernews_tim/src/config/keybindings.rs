@@ -104,6 +104,7 @@ pub struct GlobalKeyMap {
     pub goto_ask_hn_view: Keys,
     pub goto_show_hn_view: Keys,
     pub goto_jobs_view: Keys,
+    pub goto_my_threads_view: Keys,
 }
 
 impl Default for GlobalKeyMap {
@@ -127,6 +128,7 @@ impl Default for GlobalKeyMap {
             goto_ask_hn_view: Keys::new(vec![event::Key::F3.into()]),
             goto_show_hn_view: Keys::new(vec![event::Key::F4.into()]),
             goto_jobs_view: Keys::new(vec![event::Key::F5.into()]),
+            goto_my_threads_view: Keys::new(vec![event::Key::F6.into()]),
         }
     }
 }

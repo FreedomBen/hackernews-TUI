@@ -188,6 +188,7 @@ For more information about configuring the application's key mappings or definin
 | `goto_ask_hn_view`           | Go to ask HN view                                            | `F3`               |
 | `goto_show_hn_view`          | Go to show HN view                                           | `F4`               |
 | `goto_jobs_view`             | Go to jobs view                                              | `F5`               |
+| `goto_my_threads_view`       | Go to your comments view (auth required)                     | `F6`               |
 
 ### Edit shortcuts
 

@@ -137,6 +137,29 @@ fn set_up_global_callbacks(
         },
     );
 
+    s.set_on_post_event(
+        global_keymap.goto_my_threads_view,
+        move |s| match client::get_user_info() {
+            Some(info) => {
+                comment_view::construct_and_add_new_threads_view(
+                    s,
+                    client,
+                    info.username.clone(),
+                    0,
+                );
+            }
+            None => {
+                s.add_layer(
+                    Dialog::info(
+                        "Log in first (press `L`) to view your comments on \
+                         Hacker News.",
+                    )
+                    .title("Not logged in"),
+                );
+            }
+        },
+    );
+
     s.set_on_post_event(global_keymap.quit, |s| s.quit());
 }
 

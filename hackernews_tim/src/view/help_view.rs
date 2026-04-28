@@ -224,6 +224,10 @@ fn default_view_navigation_commands() -> Vec<Command> {
             "Go to show HN view",
         ),
         Command::new(global_keymap.goto_jobs_view.to_string(), "Go to jobs view"),
+        Command::new(
+            global_keymap.goto_my_threads_view.to_string(),
+            "Go to your comments view (requires authentication)",
+        ),
     ]
 }
 
