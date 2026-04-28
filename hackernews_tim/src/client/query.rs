@@ -311,10 +311,7 @@ mod tests {
             },
         };
         let query = filters.query();
-        assert_eq!(
-            query,
-            "&numericFilters=num_comments>=10,num_comments<100"
-        );
+        assert_eq!(query, "&numericFilters=num_comments>=10,num_comments<100");
         assert!(!query.contains("=,"));
     }
 

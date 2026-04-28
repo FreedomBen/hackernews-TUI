@@ -2690,7 +2690,10 @@ mod tests {
     #[test]
     fn extract_textarea_returns_inner_text() {
         let body = r#"<form><textarea name="text" rows="6">hello world</textarea></form>"#;
-        assert_eq!(extract_textarea(body, "text").as_deref(), Some("hello world"));
+        assert_eq!(
+            extract_textarea(body, "text").as_deref(),
+            Some("hello world")
+        );
     }
 
     #[test]
@@ -2735,7 +2738,10 @@ mod tests {
     #[test]
     fn extract_hidden_input_accepts_single_quoted_attrs() {
         let body = "<input type='hidden' name='hmac' value='abc123'>";
-        assert_eq!(extract_hidden_input(body, "hmac").as_deref(), Some("abc123"));
+        assert_eq!(
+            extract_hidden_input(body, "hmac").as_deref(),
+            Some("abc123")
+        );
     }
 
     #[test]
@@ -2754,21 +2760,17 @@ mod tests {
 
     #[test]
     fn classify_post_reply_response_detects_expired_link() {
-        let err = classify_post_reply_response(
-            "<html>Unknown or expired link.</html>",
-        )
-        .unwrap_err()
-        .to_string();
+        let err = classify_post_reply_response("<html>Unknown or expired link.</html>")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("expired"), "got: {err}");
     }
 
     #[test]
     fn classify_post_reply_response_detects_validation_required() {
-        let err = classify_post_reply_response(
-            "<html><body>Validation required</body></html>",
-        )
-        .unwrap_err()
-        .to_string();
+        let err = classify_post_reply_response("<html><body>Validation required</body></html>")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("CAPTCHA"), "got: {err}");
     }
 

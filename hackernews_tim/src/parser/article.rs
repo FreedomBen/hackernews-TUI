@@ -441,9 +441,8 @@ mod tests {
     #[test]
     fn parse_preserves_pre_block_content() {
         config::init_test_config();
-        let a = article(
-            "<html><body><pre>line one\n    line two\n  line three</pre></body></html>",
-        );
+        let a =
+            article("<html><body><pre>line one\n    line two\n  line three</pre></body></html>");
         let result = a.parse(80).expect("article should parse");
         let src = result.content.source();
         // Whitespace inside <pre> is kept (lines are joined with the prefix

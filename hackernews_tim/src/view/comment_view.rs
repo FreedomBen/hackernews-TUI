@@ -912,4 +912,27 @@ mod tests {
         assert_eq!(parse_link_index("x"), None);
         assert_eq!(parse_link_index("1a"), None);
     }
+
+    #[test]
+    fn parse_link_index_strips_leading_zeros() {
+        // The standard usize parser treats leading zeros as decimal, not
+        // octal — "007" should resolve to 7 so a fast typer who hits
+        // double-zero by accident still gets a sensible link target.
+        assert_eq!(parse_link_index("007"), Some(7));
+        assert_eq!(parse_link_index("0"), Some(0));
+    }
+
+    #[test]
+    fn parse_link_index_returns_none_on_overflow() {
+        // 40 nines doesn't fit in any usize (even 128-bit), so the parse
+        // returns None rather than wrapping or panicking.
+        let huge: String = "9".repeat(40);
+        assert_eq!(parse_link_index(&huge), None);
+    }
+
+    #[test]
+    fn parse_link_index_returns_none_for_negative() {
+        // usize parser rejects the leading sign.
+        assert_eq!(parse_link_index("-5"), None);
+    }
 }

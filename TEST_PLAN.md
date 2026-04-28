@@ -36,9 +36,9 @@ truth for individual cases.
 - [x] 1.5 `parser/article.rs` + `parser/rcdom.rs` — reader-mode rendering
 - [x] 1.6 `utils.rs` — formatting helpers
 - [x] 1.7 `reply_editor.rs` — scaffold I/O
-- [ ] 1.8 View-module helpers (lift, then test)
+- [x] 1.8 View-module helpers (lift, then test)
 - [ ] 1.9 Doctests (optional, low priority)
-- [ ] Phase 1 acceptance — `make test` + `cargo clippy -- -D warnings` green; test count roughly doubles
+- [x] Phase 1 acceptance — `make test` + `cargo clippy -- -D warnings` green; test count roughly doubles (117 → 243)
 
 ### Phase 2 (view-level tests)
 

@@ -357,13 +357,60 @@ pub fn open_ith_link_in_article_view(
     }
 }
 
+/// Resolve the 1-indexed `i`-th link in `links`. Returns `None` when `i`
+/// is out of range (including the special case `i == 0`, which the typed-
+/// prefix UI treats as "no number"). Pure — extracted so the bounds half
+/// of [`open_ith_link_in_browser`] can be unit tested without launching
+/// a browser.
+pub fn nth_link(links: &[String], i: usize) -> Option<&str> {
+    if i > 0 && i <= links.len() {
+        Some(&links[i - 1])
+    } else {
+        None
+    }
+}
+
 /// open in browser the `i`-th link.
 /// Note that the link index starts with `1`.
 pub fn open_ith_link_in_browser(links: &[String], i: usize) -> Option<EventResult> {
-    if i > 0 && i <= links.len() {
-        open_url_in_browser(&links[i - 1]);
-        Some(EventResult::Consumed(None))
-    } else {
-        Some(EventResult::Consumed(None))
+    if let Some(link) = nth_link(links, i) {
+        open_url_in_browser(link);
+    }
+    Some(EventResult::Consumed(None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nth_link_empty_slice_returns_none() {
+        let links: Vec<String> = vec![];
+        assert!(nth_link(&links, 0).is_none());
+        assert!(nth_link(&links, 1).is_none());
+    }
+
+    #[test]
+    fn nth_link_zero_index_returns_none() {
+        // 1-indexed: 0 means "no number typed", which is invalid here.
+        let links = vec!["https://a.example".to_string()];
+        assert!(nth_link(&links, 0).is_none());
+    }
+
+    #[test]
+    fn nth_link_in_range_returns_link() {
+        let links = vec![
+            "https://a.example".to_string(),
+            "https://b.example".to_string(),
+        ];
+        assert_eq!(nth_link(&links, 1), Some("https://a.example"));
+        assert_eq!(nth_link(&links, 2), Some("https://b.example"));
+    }
+
+    #[test]
+    fn nth_link_past_end_returns_none() {
+        let links = vec!["https://a.example".to_string()];
+        assert!(nth_link(&links, 2).is_none());
+        assert!(nth_link(&links, 99).is_none());
     }
 }

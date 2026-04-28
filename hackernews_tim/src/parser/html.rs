@@ -244,7 +244,10 @@ mod tests {
         // are not part of the rendered output, only the inner text is.
         let src = rendered_source("see `foo` here");
         assert!(src.contains("foo"), "got {src:?}");
-        assert!(!src.contains("`foo`"), "backticks should be stripped: {src:?}");
+        assert!(
+            !src.contains("`foo`"),
+            "backticks should be stripped: {src:?}"
+        );
     }
 
     #[test]
@@ -266,10 +269,7 @@ mod tests {
         // Paragraphs *are* recursed into, so a link inside a `<p>` is
         // extracted. Pair with the italic test above to triangulate the
         // recurse-vs-passthrough boundary.
-        let result = render(
-            r#"<p>see <a href="https://outer.example">it</a></p>"#,
-            0,
-        );
+        let result = render(r#"<p>see <a href="https://outer.example">it</a></p>"#, 0);
         assert_eq!(result.links, vec!["https://outer.example".to_string()]);
     }
 

@@ -718,3 +718,62 @@ impl HasHelpView for link_dialog::LinkDialog {
         ])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config;
+
+    #[test]
+    fn default_other_commands_lists_quit_and_help() {
+        config::init_test_config();
+        let cmds = default_other_commands();
+        let descs: Vec<&str> = cmds.iter().map(|c| c.desc.as_str()).collect();
+        assert!(
+            descs.iter().any(|d| d.contains("help dialog")),
+            "got {descs:?}"
+        );
+        assert!(
+            descs.iter().any(|d| d.contains("Quit the application")),
+            "got {descs:?}"
+        );
+    }
+
+    #[test]
+    fn default_view_navigation_commands_includes_front_page() {
+        config::init_test_config();
+        let cmds = default_view_navigation_commands();
+        let descs: Vec<&str> = cmds.iter().map(|c| c.desc.as_str()).collect();
+        assert!(
+            descs.iter().any(|d| d.contains("front page")),
+            "got {descs:?}"
+        );
+        // The default goto_front_page_view binding is F1 — ensure the
+        // keybinding label reflects that.
+        let labels: Vec<&str> = cmds.iter().map(|c| c.keys_desc.as_str()).collect();
+        assert!(labels.contains(&"f1"), "got {labels:?}");
+    }
+
+    #[test]
+    fn default_scroll_commands_covers_basic_directions() {
+        config::init_test_config();
+        let cmds = default_scroll_commands();
+        let descs: Vec<&str> = cmds.iter().map(|c| c.desc.as_str()).collect();
+        assert!(descs.iter().any(|d| d.contains("Scroll up")), "{descs:?}");
+        assert!(descs.iter().any(|d| d.contains("Scroll down")), "{descs:?}");
+        assert!(
+            descs.iter().any(|d| d.contains("Scroll page up")),
+            "{descs:?}"
+        );
+        assert!(descs.iter().any(|d| d.contains("top")), "{descs:?}");
+        assert!(descs.iter().any(|d| d.contains("bottom")), "{descs:?}");
+    }
+
+    #[test]
+    fn default_command_factories_are_non_empty() {
+        config::init_test_config();
+        assert!(!default_other_commands().is_empty());
+        assert!(!default_view_navigation_commands().is_empty());
+        assert!(!default_scroll_commands().is_empty());
+    }
+}

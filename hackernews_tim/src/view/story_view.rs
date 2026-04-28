@@ -107,18 +107,22 @@ impl StoryView {
         max_id_len: usize,
         vote_state: &HashMap<u32, VoteData>,
     ) -> ScrollView<LinearLayout> {
+        let component_style = &config::get_config_theme().component_style;
+        let current_username = client::get_user_info().map(|u| u.username.as_str());
         LinearLayout::vertical()
             .with(|s| {
                 stories.iter().enumerate().for_each(|(i, story)| {
                     // initialize the story text with its ID
                     let mut story_text = StyledString::styled(
                         format!("{1:>0$}. ", max_id_len, starting_id + i + 1),
-                        config::get_config_theme().component_style.metadata,
+                        component_style.metadata,
                     );
                     story_text.append(Self::get_story_text(
                         max_id_len,
                         story,
                         vote_state.get(&story.id),
+                        component_style,
+                        current_username,
                     ));
 
                     s.add_child(text_view::TextView::new(story_text));
@@ -129,14 +133,21 @@ impl StoryView {
 
     /// Get the text summarizing basic information about a story.
     ///
-    /// When `vote` is `Some`, an up arrow is inserted before the points
-    /// count — coloured if the user has already upvoted, plain otherwise.
-    /// `vote` is `None` for stories the parser couldn't attach vote links
-    /// to (e.g. "XYZ is hiring" posts, or any request made logged-out),
-    /// and those render no arrow at all. Stories can't be downvoted, so
-    /// no down arrow is ever shown.
-    fn get_story_text(max_id_len: usize, story: &Story, vote: Option<&VoteData>) -> StyledString {
-        let component_style = &config::get_config_theme().component_style;
+    /// `component_style` and `current_username` are passed in (rather than
+    /// looked up from globals) so this function stays unit-testable. When
+    /// `vote` is `Some`, an up arrow is inserted before the points count —
+    /// coloured if the user has already upvoted, plain otherwise. `vote`
+    /// is `None` for stories the parser couldn't attach vote links to
+    /// (e.g. "XYZ is hiring" posts, or any request made logged-out), and
+    /// those render no arrow at all. Stories can't be downvoted, so no
+    /// down arrow is ever shown.
+    fn get_story_text(
+        max_id_len: usize,
+        story: &Story,
+        vote: Option<&VoteData>,
+        component_style: &config::ComponentStyle,
+        current_username: Option<&str>,
+    ) -> StyledString {
         let mut story_text = story.styled_title();
 
         if let Ok(url) = url::Url::parse(&story.url) {
@@ -162,7 +173,7 @@ impl StoryView {
             }
         }
 
-        if client::get_user_info().map(|u| u.username.as_str()) == Some(story.author.as_str()) {
+        if current_username == Some(story.author.as_str()) {
             story_text.append_styled("* ", component_style.own_item_indicator);
         }
 
@@ -376,12 +387,20 @@ impl StoryView {
         let starting_id = self.starting_id;
         let story = &self.stories[id];
         let vote = self.vote_state.get(&story.id);
+        let component_style = &config::get_config_theme().component_style;
+        let current_username = client::get_user_info().map(|u| u.username.as_str());
 
         let mut text = StyledString::styled(
             format!("{1:>0$}. ", max_id_len, starting_id + id + 1),
-            config::get_config_theme().component_style.metadata,
+            component_style.metadata,
         );
-        text.append(Self::get_story_text(max_id_len, story, vote));
+        text.append(Self::get_story_text(
+            max_id_len,
+            story,
+            vote,
+            component_style,
+            current_username,
+        ));
         text
     }
 
@@ -878,4 +897,135 @@ pub fn construct_and_add_new_story_view(
         s.pop_layer();
     }
     s.screen_mut().add_transparent_layer(Layer::new(async_view));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ComponentStyle;
+
+    fn fixture_story(author: &str, url: &str) -> Story {
+        Story {
+            id: 42,
+            url: url.to_string(),
+            author: author.to_string(),
+            points: 123,
+            num_comments: 7,
+            time: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            title: "Hello".to_string(),
+            content: "".to_string(),
+            dead: false,
+            flagged: false,
+        }
+    }
+
+    // --- compute_max_id_len ---
+
+    #[test]
+    fn compute_max_id_len_handles_zero_stories() {
+        // n=0, starting_id=0 → max_id is 1, width=1.
+        assert_eq!(StoryView::compute_max_id_len(0, 0), 1);
+    }
+
+    #[test]
+    fn compute_max_id_len_grows_with_starting_id() {
+        // Page boundary: starting_id=99, one page of 20 → max_id 119 → 3 digits.
+        assert_eq!(StoryView::compute_max_id_len(20, 99), 3);
+    }
+
+    #[test]
+    fn compute_max_id_len_single_page_under_ten() {
+        // n=8, starting_id=0 → max_id 9 → 1 digit. (max_id=starting_id+n+1)
+        assert_eq!(StoryView::compute_max_id_len(8, 0), 1);
+    }
+
+    #[test]
+    fn compute_max_id_len_crosses_decade_boundary() {
+        // n=10, starting_id=0 → max_id 11 → 2 digits.
+        assert_eq!(StoryView::compute_max_id_len(10, 0), 2);
+    }
+
+    // --- get_story_text ---
+
+    #[test]
+    fn get_story_text_anonymous_user_no_marker() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "https://example.com/post");
+        let text = StoryView::get_story_text(2, &story, None, &cs, None);
+        let src = text.source();
+        assert!(src.contains("Hello"));
+        assert!(src.contains("(example.com)"));
+        assert!(
+            !src.contains("* "),
+            "anonymous viewer must not see own marker: {src:?}"
+        );
+        assert!(!src.contains('▲'), "no vote info ⇒ no arrow: {src:?}");
+        assert!(src.contains("123 points"));
+        assert!(src.contains("by alice"));
+        assert!(src.contains("7 comments"));
+    }
+
+    #[test]
+    fn get_story_text_own_story_shows_marker() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "https://example.com/post");
+        let text = StoryView::get_story_text(2, &story, None, &cs, Some("alice"));
+        assert!(text.source().contains("* "));
+    }
+
+    #[test]
+    fn get_story_text_other_user_no_marker() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("bob", "https://example.com/post");
+        let text = StoryView::get_story_text(2, &story, None, &cs, Some("alice"));
+        assert!(!text.source().contains("* "));
+    }
+
+    #[test]
+    fn get_story_text_with_upvote_includes_arrow() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "https://example.com/post");
+        let vote = VoteData {
+            auth: "tok".to_string(),
+            vote: Some(VoteDirection::Up),
+            can_downvote: false,
+        };
+        let text = StoryView::get_story_text(2, &story, Some(&vote), &cs, None);
+        assert!(text.source().contains('▲'));
+    }
+
+    #[test]
+    fn get_story_text_with_no_vote_direction_still_shows_arrow() {
+        // Some(VoteData) with vote=None means "vote arrow rendered but the
+        // user hasn't clicked it yet" — we still show the arrow, just plain.
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "https://example.com/post");
+        let vote = VoteData {
+            auth: "tok".to_string(),
+            vote: None,
+            can_downvote: false,
+        };
+        let text = StoryView::get_story_text(2, &story, Some(&vote), &cs, None);
+        assert!(text.source().contains('▲'));
+    }
+
+    #[test]
+    fn get_story_text_missing_url_skips_domain() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "");
+        let text = StoryView::get_story_text(2, &story, None, &cs, None);
+        let src = text.source();
+        assert!(!src.contains('('), "no URL ⇒ no domain parens: {src:?}");
+    }
+
+    #[test]
+    fn get_story_text_renders_custom_domain() {
+        let cs = ComponentStyle::default();
+        let story = fixture_story("alice", "https://blog.acme.dev/article/42");
+        let text = StoryView::get_story_text(2, &story, None, &cs, None);
+        assert!(text.source().contains("(blog.acme.dev)"));
+    }
 }

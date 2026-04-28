@@ -730,10 +730,7 @@ mod tests {
         // Spot-check at least one binding from each section to prove the
         // top-level Default propagates all the way down.
         assert!(km.global_keymap.quit.has_event(&Event::Char('q')));
-        assert!(km
-            .scroll_keymap
-            .up
-            .has_event(&Event::Char('k')));
+        assert!(km.scroll_keymap.up.has_event(&Event::Char('k')));
         assert!(km.custom_keymaps.is_empty());
     }
 
@@ -776,7 +773,10 @@ mod tests {
         // The previous {q, C-c} default has been replaced wholesale by "Q".
         assert!(!g.quit.has_event(&Event::Char('q')));
         // Other defaults stay.
-        assert_eq!(format!("{}", g.open_help_dialog), format!("{original_help}"));
+        assert_eq!(
+            format!("{}", g.open_help_dialog),
+            format!("{original_help}")
+        );
         assert!(g.goto_front_page_view.has_event(&Event::Key(Key::F1)));
     }
 }
