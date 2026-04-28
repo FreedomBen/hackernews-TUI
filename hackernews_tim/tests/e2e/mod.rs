@@ -16,6 +16,8 @@
 #![cfg(target_os = "linux")]
 #![allow(dead_code)] // Helpers are shared across many e2e binaries; not all are used by every one.
 
+pub mod fakehn;
+
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{Read, Write};

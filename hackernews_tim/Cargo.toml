@@ -80,3 +80,8 @@ insta = { version = "1", features = ["filters"] }
 portable-pty = "0.8"
 vt100 = "0.15"
 tempfile = "3"
+# Fixture HN backend (TEST_PLAN.md §3.1.2). `wiremock` is async, so the
+# `FakeHnServer` helper owns a small `tokio` runtime and uses
+# `block_on` from sync test bodies.
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }

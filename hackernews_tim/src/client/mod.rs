@@ -30,6 +30,19 @@ pub const HN_HOST_URL: &str = "https://news.ycombinator.com";
 /// [`hn_listing_pages_for_tui_page`].
 const HN_LISTING_PAGE_SIZE: usize = 30;
 
+/// Read the Algolia / Firebase base URLs, applying the e2e-only
+/// `HN_ALGOLIA_BASE` and `HN_FIREBASE_BASE` env-var overrides
+/// (TEST_PLAN.md §3.1.2). Both fall back to the production constants.
+/// Values are stored as instance fields on [`HNClient`] so a single
+/// binary can't split requests between an override and the real host.
+fn default_bases() -> (String, String) {
+    let algolia = std::env::var("HN_ALGOLIA_BASE")
+        .unwrap_or_else(|_| HN_ALGOLIA_PREFIX.to_string());
+    let firebase = std::env::var("HN_FIREBASE_BASE")
+        .unwrap_or_else(|_| HN_OFFICIAL_PREFIX.to_string());
+    (algolia, firebase)
+}
+
 static CLIENT: once_cell::sync::OnceCell<HNClient> = once_cell::sync::OnceCell::new();
 
 /// Global slot for the logged-in user's display info. `None` means either no
@@ -102,6 +115,13 @@ impl StartupLoginStatus {
 #[derive(Clone)]
 pub struct HNClient {
     client: ureq::Agent,
+    /// Base URL for HN Algolia, e.g. `https://hn.algolia.com/api/v1`.
+    /// Overridable via `HN_ALGOLIA_BASE` for e2e tests (§3.1.2).
+    algolia_base: String,
+    /// Base URL for the HN Firebase API, e.g.
+    /// `https://hacker-news.firebaseio.com/v0`. Overridable via
+    /// `HN_FIREBASE_BASE` for e2e tests (§3.1.2).
+    firebase_base: String,
 }
 
 /// A macro to log the runtime of an expression
@@ -126,10 +146,13 @@ impl HNClient {
     /// Create a new Hacker News Client with an explicit timeout (in seconds).
     /// Useful during startup when the global config has not been sealed yet.
     pub fn with_timeout(timeout: u64) -> Result<HNClient> {
+        let (algolia_base, firebase_base) = default_bases();
         Ok(HNClient {
             client: ureq::AgentBuilder::new()
                 .timeout(std::time::Duration::from_secs(timeout))
                 .build(),
+            algolia_base,
+            firebase_base,
         })
     }
 
@@ -148,11 +171,14 @@ impl HNClient {
                 warn!("failed to load cached HN session cookie: {err}");
             }
         }
+        let (algolia_base, firebase_base) = default_bases();
         Ok(HNClient {
             client: ureq::AgentBuilder::new()
                 .timeout(std::time::Duration::from_secs(timeout))
                 .cookie_store(store)
                 .build(),
+            algolia_base,
+            firebase_base,
         })
     }
 
@@ -196,7 +222,7 @@ impl HNClient {
     where
         T: serde::de::DeserializeOwned,
     {
-        let request_url = format!("{HN_ALGOLIA_PREFIX}/items/{id}");
+        let request_url = format!("{}/items/{id}", self.algolia_base);
         let item = log!(
             self.client.get(&request_url).call()?.into_json::<T>()?,
             format!("get HN item (id={id}) using {request_url}")
@@ -206,7 +232,7 @@ impl HNClient {
 
     pub fn get_page_data(&self, item_id: u32) -> Result<PageData> {
         // get the root item in the page
-        let request_url = format!("{HN_OFFICIAL_PREFIX}/item/{item_id}.json");
+        let request_url = format!("{}/item/{item_id}.json", self.firebase_base);
         let item = log!(
             self.client
                 .get(&request_url)
@@ -366,7 +392,7 @@ impl HNClient {
 
     /// Get a story based on its id
     pub fn get_story_from_story_id(&self, id: u32) -> Result<Story> {
-        let request_url = format!("{HN_ALGOLIA_PREFIX}/search?tags=story,story_{id}");
+        let request_url = format!("{}/search?tags=story,story_{id}", self.algolia_base);
         let response = log!(
             self.client
                 .get(&request_url)
@@ -390,7 +416,7 @@ impl HNClient {
     ) -> Result<Vec<Story>> {
         let request_url = format!(
             "{}/{}?{}&hitsPerPage={}&page={}",
-            HN_ALGOLIA_PREFIX,
+            self.algolia_base,
             if by_date { "search_by_date" } else { "search" },
             HN_SEARCH_QUERY_STRING,
             config::search_page_size(),
@@ -428,8 +454,9 @@ impl HNClient {
     pub fn get_user_threads_page(&self, username: &str, page: usize) -> Result<PageData> {
         let page_size = config::page_size();
         let request_url = format!(
-            "{HN_ALGOLIA_PREFIX}/search_by_date?tags=comment,author_{username}\
+            "{}/search_by_date?tags=comment,author_{username}\
              &hitsPerPage={page_size}&page={page}",
+            self.algolia_base,
         );
         let response = log!(
             self.client
@@ -634,7 +661,7 @@ impl HNClient {
                 anyhow::bail!("unsupported story tag {tag}");
             }
         };
-        let request_url = format!("{HN_OFFICIAL_PREFIX}{endpoint}");
+        let request_url = format!("{}{endpoint}", self.firebase_base);
         let stories = log!(
             self.client
                 .get(&request_url)
@@ -654,7 +681,7 @@ impl HNClient {
 
         let request_url = format!(
             "{}/search?tags=story,({}){}&hitsPerPage={}",
-            HN_ALGOLIA_PREFIX,
+            self.algolia_base,
             ids.iter().fold("".to_owned(), |tags, story_id| format!(
                 "{tags}story_{story_id},"
             )),
@@ -694,7 +721,7 @@ impl HNClient {
 
         let request_url = format!(
             "{}/{}?tags={}&hitsPerPage={}&page={}{}",
-            HN_ALGOLIA_PREFIX,
+            self.algolia_base,
             search_op,
             tag,
             config::page_size(),
