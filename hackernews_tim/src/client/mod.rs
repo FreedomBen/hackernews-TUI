@@ -436,10 +436,20 @@ impl HNClient {
             format!("get user threads (user={username}, page={page}) using {request_url}")
         );
 
-        // For each user comment, fetch its full subtree (replies and
-        // their descendants) via Algolia's `/items/{id}` endpoint. We
-        // fan out in parallel via rayon — `into_par_iter().flat_map`
-        // preserves listing order, so the final flattened sequence is
+        // Fan out two HTTP-bound tasks in parallel:
+        //
+        //   1. Per-comment subtree fetches (Algolia `/items/{id}`), which
+        //      give us the reply tree under each user comment but no
+        //      per-comment score — the Algolia comment item just doesn't
+        //      expose one.
+        //   2. A scrape of HN's own `/threads?id=<u>` HTML, which is the
+        //      only place `<span class="score">` is rendered for the
+        //      viewer's own comments. The map gets merged into the
+        //      Algolia-built tree below so the threads view can render
+        //      `N points` the same way the regular comment view does.
+        //
+        // For each hit, the subtree fan-out preserves listing order via
+        // `into_par_iter().flat_map`, so the final flattened sequence is
         // [hit_0_root, hit_0_replies…, hit_1_root, hit_1_replies…, …].
         // On per-subtree fetch failure we fall back to the flat hit so
         // the user still sees their comment without its reply tree.
@@ -448,34 +458,51 @@ impl HNClient {
         // (root + replies) so a bare `o`/`O` from any focused item — not
         // just the level-0 user comment with the visible `re:` header —
         // dispatches into an in-TUI comment view of the parent thread.
-        let comments: Vec<Comment> = log!(
-            response
-                .hits
-                .into_par_iter()
-                .flat_map(|hit| {
-                    let id = hit.id();
-                    let parent_story_id = hit.story_id();
-                    let header = hit.story_header_html();
-                    match self.get_item_from_id::<CommentResponse>(id) {
-                        Ok(subtree) => {
-                            let mut comments: Vec<Comment> = subtree.into();
-                            if let Some(root) = comments.first_mut() {
-                                root.content = format!("{header}{}", root.content);
+        let (score_map, mut comments) = rayon::join(
+            || self.fetch_user_threads_score_map(username, page + 1),
+            || -> Vec<Comment> {
+                log!(
+                    response
+                        .hits
+                        .into_par_iter()
+                        .flat_map(|hit| {
+                            let id = hit.id();
+                            let parent_story_id = hit.story_id();
+                            let header = hit.story_header_html();
+                            match self.get_item_from_id::<CommentResponse>(id) {
+                                Ok(subtree) => {
+                                    let mut comments: Vec<Comment> = subtree.into();
+                                    if let Some(root) = comments.first_mut() {
+                                        root.content = format!("{header}{}", root.content);
+                                    }
+                                    for c in &mut comments {
+                                        c.parent_story_id = parent_story_id;
+                                    }
+                                    comments
+                                }
+                                Err(err) => {
+                                    warn!("failed to load reply tree for comment id={id}: {err}");
+                                    hit.into_root_comment().map(|c| vec![c]).unwrap_or_default()
+                                }
                             }
-                            for c in &mut comments {
-                                c.parent_story_id = parent_story_id;
-                            }
-                            comments
-                        }
-                        Err(err) => {
-                            warn!("failed to load reply tree for comment id={id}: {err}");
-                            hit.into_root_comment().map(|c| vec![c]).unwrap_or_default()
-                        }
-                    }
-                })
-                .collect::<Vec<_>>(),
-            format!("fetch reply subtrees for user threads (user={username}, page={page})")
+                        })
+                        .collect::<Vec<_>>(),
+                    format!("fetch reply subtrees for user threads (user={username}, page={page})")
+                )
+            },
         );
+
+        // Patch in any per-comment scores we scraped from HN's threads
+        // page. Replies the user didn't author won't have a score span,
+        // so they stay `None` — only the user's own comments get
+        // populated.
+        if !score_map.is_empty() {
+            for comment in &mut comments {
+                if let Some(&pts) = score_map.get(&comment.id) {
+                    comment.points = Some(pts);
+                }
+            }
+        }
 
         // Push everything to the receiver in one batch and drop the sender.
         // CommentView polls the channel until it's both empty and closed,
@@ -506,6 +533,59 @@ impl HNClient {
             vote_state: HashMap::new(),
             vouch_state: HashMap::new(),
         })
+    }
+
+    /// Fetch HN's `/threads?id=<username>` HTML page (following morelinks
+    /// up to `max_pages` times) and extract a map of comment_id → points
+    /// from the rendered `<span class="score">N points?</span>` tags.
+    ///
+    /// HN only renders score spans for the *viewer's* own comments, so
+    /// this is meaningful only for an authenticated session viewing its
+    /// own threads — exactly the case the in-TUI threads view targets.
+    /// Anonymous sessions or cross-user views get an empty map and the
+    /// threads view falls back to the existing `points: None` behavior.
+    ///
+    /// Best-effort: any HTTP, IO, or regex-compile failure short-circuits
+    /// to whatever scores we collected so far. Per-comment scores are a
+    /// nicety, not load-bearing for navigation, so we never propagate an
+    /// error up to the threads view.
+    fn fetch_user_threads_score_map(&self, username: &str, max_pages: usize) -> HashMap<u32, u32> {
+        let morelink_rg = match regex::Regex::new("<a.*?href='(?P<link>.*?)'.*class='morelink'.*?>")
+        {
+            Ok(rg) => rg,
+            Err(_) => return HashMap::new(),
+        };
+
+        let mut map: HashMap<u32, u32> = HashMap::new();
+        let mut url = format!(
+            "{HN_HOST_URL}/threads?id={username}{}",
+            showdead_query_suffix("&")
+        );
+
+        for _ in 0..max_pages {
+            let body: Result<String> = (|| Ok(self.client.get(&url).call()?.into_string()?))();
+            let body = match body {
+                Ok(b) => b,
+                Err(err) => {
+                    warn!(
+                        "failed to fetch /threads?id={username} for score map (url={url}): {err}"
+                    );
+                    break;
+                }
+            };
+
+            parse_threads_score_map_into(&body, &mut map);
+
+            match morelink_rg.captures(&body) {
+                Some(cap) => {
+                    let next = cap.name("link").unwrap().as_str().replace("&amp;", "&");
+                    url = format!("{HN_HOST_URL}/{next}");
+                }
+                None => break,
+            }
+        }
+
+        map
     }
 
     /// Reorder a list of stories to follow the same order as another list of story IDs.
@@ -1413,6 +1493,32 @@ fn parse_comments_from_content(page_content: &str) -> Vec<Comment> {
     comments
 }
 
+/// Extract every `<span class="score" id="score_<id>">N points?</span>`
+/// tag from a rendered HN page and merge `(id, points)` into `map`.
+///
+/// Used by the threads view to backfill per-comment scores that the
+/// Algolia API doesn't expose. Existing entries in `map` are
+/// overwritten so that a later page (which is more up-to-date for older
+/// comments) wins over an earlier one.
+fn parse_threads_score_map_into(content: &str, map: &mut HashMap<u32, u32>) {
+    let score_rg =
+        match regex::Regex::new(r#"<span class="score" id="score_(\d+)">(\d+) points?</span>"#) {
+            Ok(rg) => rg,
+            Err(_) => return,
+        };
+
+    for cap in score_rg.captures_iter(content) {
+        let (Some(id_m), Some(pts_m)) = (cap.get(1), cap.get(2)) else {
+            continue;
+        };
+        let (Ok(id), Ok(pts)) = (id_m.as_str().parse::<u32>(), pts_m.as_str().parse::<u32>())
+        else {
+            continue;
+        };
+        map.insert(id, pts);
+    }
+}
+
 /// Parse vote data out of a rendered HN item page.
 ///
 /// HN's HTML exposes three anchor ids per voteable item:
@@ -1716,11 +1822,12 @@ mod tests {
     use super::{
         classify_login_response, classify_missing_reply_form, hn_listing_pages_for_tui_page,
         listing_path_for_view, parse_comments_from_content, parse_karma_from_profile,
-        parse_reply_form, parse_showdead_from_profile, parse_topcolor_from_profile,
-        parse_vote_data_from_content, parse_vouch_data_from_content, StartupLoginStatus,
-        StorySortMode,
+        parse_reply_form, parse_showdead_from_profile, parse_threads_score_map_into,
+        parse_topcolor_from_profile, parse_vote_data_from_content, parse_vouch_data_from_content,
+        StartupLoginStatus, StorySortMode,
     };
     use crate::model::VoteDirection;
+    use std::collections::HashMap;
 
     #[test]
     fn listing_path_maps_hn_backed_views() {
@@ -2437,6 +2544,49 @@ mod tests {
         let comments = parse_comments_from_content(html);
         assert_eq!(comments.len(), 1);
         assert_eq!(comments[0].points, None);
+    }
+
+    #[test]
+    fn parse_threads_score_map_extracts_singular_and_plural() {
+        let html = concat!(
+            r#"<span class="score" id="score_111">1 point</span>"#,
+            r#"<span class="score" id="score_222">42 points</span>"#,
+            r#"<span class="score" id="score_333">1000 points</span>"#,
+        );
+        let mut map = HashMap::new();
+        parse_threads_score_map_into(html, &mut map);
+        assert_eq!(map.get(&111), Some(&1));
+        assert_eq!(map.get(&222), Some(&42));
+        assert_eq!(map.get(&333), Some(&1000));
+        assert_eq!(map.len(), 3);
+    }
+
+    #[test]
+    fn parse_threads_score_map_ignores_unrelated_score_spans() {
+        // Story-row scores carry the same class but a different id shape;
+        // the regex anchors on `score_<digits>` so anything else (or a
+        // missing `points` suffix) gets dropped.
+        let html = concat!(
+            r#"<span class="score">7</span>"#,
+            r#"<span class="score" id="score_42">17 points</span>"#,
+        );
+        let mut map = HashMap::new();
+        parse_threads_score_map_into(html, &mut map);
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(&42), Some(&17));
+    }
+
+    #[test]
+    fn parse_threads_score_map_overwrites_existing_entries() {
+        // A later page (older comments) is more authoritative than an
+        // earlier one for the same id, so newer reads should win.
+        let mut map = HashMap::new();
+        map.insert(7u32, 1u32);
+        parse_threads_score_map_into(
+            r#"<span class="score" id="score_7">9 points</span>"#,
+            &mut map,
+        );
+        assert_eq!(map.get(&7), Some(&9));
     }
 
     // Captured from an authenticated session on `/item?id=47882645`. Covers
