@@ -94,3 +94,52 @@ fn quit_key_q_exits_with_zero_status() {
         "expected zero exit status, got {status:?}"
     );
 }
+
+#[test]
+fn front_page_http_500_surfaces_error_view() {
+    let server = FakeHnServer::start();
+
+    // The front-page tag uses `StorySortMode::None`, so the binary
+    // calls `get_stories_no_sort`, which hits the official Firebase
+    // `/topstories.json` endpoint first. A 500 there fails the whole
+    // `get_stories_by_tag` call before any Algolia traffic. The
+    // parallel `get_listing_vote_state` request to news_base `/news`
+    // is unmounted on purpose: its errors are swallowed (warn!'d and
+    // dropped), so the wiremock 404 doesn't affect this assertion.
+    server.mount_get_json("/v0/topstories.json", 500, json!({}));
+
+    let opts = SpawnOptions::new()
+        .algolia_base(server.algolia_base())
+        .firebase_base(server.firebase_base())
+        .news_base(server.news_base());
+    let mut handle = spawn_app(opts).expect("spawn_app should succeed");
+
+    dismiss_first_run_prompts(&mut handle);
+
+    // The async view replaces the loading bar with `ResultView::Err`,
+    // which renders an `ErrorView` whose centered title bar reads
+    // "Error View".
+    handle
+        .wait_for_text("Error View", FRONT_PAGE_RENDER_TIMEOUT)
+        .expect("Error View title should appear when the front page fails to load");
+
+    // The wrapped context message identifies the call site — anyhow's
+    // debug format prints the full chain, so `failed to get stories`
+    // is part of the dialog body.
+    let screen = handle.screen();
+    assert!(
+        screen.contains("failed to get stories"),
+        "expected the wrapped error context on screen; saw:\n{screen}"
+    );
+
+    // The binary must still be alive and responsive: the global
+    // quit-key callback is wired via `set_on_post_event`, so `q`
+    // should fall through the error dialog and trigger a clean exit.
+    let status = handle
+        .shutdown()
+        .expect("binary should exit cleanly after surfacing the error view");
+    assert!(
+        status.success(),
+        "expected zero exit status, got {status:?}"
+    );
+}
