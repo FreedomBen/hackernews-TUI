@@ -132,6 +132,17 @@ fn front_page_http_500_surfaces_error_view() {
         "expected the wrapped error context on screen; saw:\n{screen}"
     );
 
+    // TEST_PLAN.md §3.2.15 acceptance: PTY-rendered error-view snapshot.
+    // The wiremock URL embeds a random port, so redact `127.0.0.1:<port>`
+    // alongside the usual `\d+ \w+ ago` filter (the wrapping ureq error
+    // also includes a status-code line that varies in trivial ways).
+    insta::with_settings!({filters => vec![
+        (r"\d+ \w+ ago", "[time ago]"),
+        (r"127\.0\.0\.1:\d+", "127.0.0.1:[port]"),
+    ]}, {
+        insta::assert_snapshot!("front_page_http_500_error_view_pty", screen);
+    });
+
     // The binary must still be alive and responsive: the global
     // quit-key callback is wired via `set_on_post_event`, so `q`
     // should fall through the error dialog and trigger a clean exit.

@@ -1,0 +1,44 @@
+---
+source: hackernews_tim/tests/e2e_quit_errors.rs
+expression: screen
+---
+[Y] Hacker News | 1.front_page | 2.story | 3.ask_hn | 4.show_hn | 5.job | 6.threads | search (^S) |
+                                                       Error View
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Error: failed to get stories (tag=front_page, sort_mode=None, page=0, numeric_filters={elapsed_days: [:], points:    │
+│ [:], num_comments: [:]})                                                                                             │
+│                                                                                                                      │
+│ Caused by:                                                                                                           │
+│     http://127.0.0.1:[port]/v0/topstories.json: status code 500                                                       │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                            Hacker News Terminal UI - made by AOME ©                            [?: help] [back] [quit]
