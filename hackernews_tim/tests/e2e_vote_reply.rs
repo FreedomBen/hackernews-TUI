@@ -1,0 +1,201 @@
+//! TEST_PLAN.md §3.2.7-§3.2.8 — vote / reply happy paths against
+//! a fake HN backend (Linux-only).
+//!
+//! Both scenarios pre-write a config + auth file with a session
+//! cookie under the test's isolated `XDG_CONFIG_HOME` so the binary
+//! boots straight into the front-page story view (no flavor / no
+//! auth prompt). `verify_session` is satisfied by mounting `/news`
+//! with an HTML body containing `href="logout"`; the same mount
+//! also covers `get_listing_vote_state` for the front page tag.
+//!
+//! 3.2.7: press the upvote key on the focused story; assert the
+//! background thread issues `GET /vote?id=<id>&how=up&auth=<token>`
+//! to the fake server. The auth token is recovered from a hand-built
+//! `<a id='up_<id>' ... auth=<token>>` anchor served at `/item`,
+//! matching the regex in `parse_vote_data_from_content`.
+
+#![cfg(target_os = "linux")]
+
+#[path = "e2e/mod.rs"]
+mod helpers;
+
+use std::time::{Duration, Instant};
+
+use serde_json::json;
+
+use helpers::fakehn::FakeHnServer;
+use helpers::{spawn_app, SpawnOptions, TestDirs};
+
+const STORY_ID: u32 = 30001;
+const STORY_TITLE: &str = "vote fixture story";
+const FIXTURE_USERNAME: &str = "alice";
+const FIXTURE_PASSWORD: &str = "hunter2";
+const FIXTURE_SESSION: &str = "alice&deadbeef0123";
+const FIXTURE_AUTH_TOKEN: &str = "abc123def";
+
+const FRONT_PAGE_RENDER_TIMEOUT: Duration = Duration::from_secs(60);
+const VOTE_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+const POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Drop a minimal config TOML at the resolved `--config` path so
+/// `prompt_for_flavor` doesn't fire on startup. Every `Config` field
+/// is optional (per the `ConfigParse` derive), so an empty file
+/// merges cleanly over `Config::default()`.
+fn write_test_config(dirs: &TestDirs) {
+    let path = dirs
+        .xdg_config_home
+        .join("hackernews-tim")
+        .join("config.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).expect("create config dir");
+    std::fs::write(&path, "# minimal e2e config\n").expect("write config.toml");
+}
+
+/// Drop an auth TOML pointing at the file backend with a pre-canned
+/// session cookie. The binary's `attempt_login` path takes the
+/// `with_cached_session` branch, hits `/news` once for
+/// `verify_session`, and skips the `/login` POST entirely.
+fn write_test_auth(dirs: &TestDirs) {
+    let path = dirs
+        .xdg_config_home
+        .join("hackernews-tim")
+        .join("hn-auth.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).expect("create auth dir");
+    let toml_str = format!(
+        "storage = \"file\"\nusername = \"{FIXTURE_USERNAME}\"\npassword = \"{FIXTURE_PASSWORD}\"\nsession = \"{FIXTURE_SESSION}\"\n"
+    );
+    std::fs::write(&path, toml_str).expect("write hn-auth.toml");
+}
+
+/// Mount `/v0/topstories.json` + `/api/v1/search` to render exactly
+/// one fixture story on the front page, and `/news` so both
+/// `verify_session` (looks for `href="logout"`) and
+/// `get_listing_vote_state` (parsed for vote arrows; an empty match
+/// set is fine) succeed.
+fn mount_front_page(server: &FakeHnServer) {
+    server.mount_get_json("/v0/topstories.json", 200, json!([STORY_ID]));
+    server.mount_get_json(
+        "/api/v1/search",
+        200,
+        json!({
+            "hits": [{
+                "objectID": STORY_ID.to_string(),
+                "author": FIXTURE_USERNAME,
+                "url": format!("https://example.com/{STORY_ID}"),
+                "story_text": null,
+                "points": 42,
+                "num_comments": 0,
+                "created_at_i": 1_700_000_000_u64,
+                "_highlightResult": { "title": { "value": STORY_TITLE } },
+                "dead": false,
+                "flagged": false,
+            }]
+        }),
+    );
+    server.mount_get_text(
+        "/news",
+        200,
+        "<html><body><a href=\"logout?goto=news&amp;auth=zzz\">logout</a></body></html>",
+    );
+    // Login fallback in case `verify_session` fails for any reason —
+    // mirrors the success body shape used by `e2e_login.rs`.
+    server.mount_post_with_user_cookie(
+        "/login",
+        200,
+        "<html><body><a href=\"logout?goto=news&amp;auth=zzz\">logout</a></body></html>",
+        FIXTURE_SESSION,
+    );
+}
+
+/// Mount `/item` returning HTML that `parse_vote_data_from_content`
+/// can scrape: an `<a id='up_<id>' ... auth=<token>>` anchor (the
+/// upvote regex). The lazy per-item fetch in
+/// `StoryView::apply_vote` hits this on every keypress, regardless
+/// of whether listing vote state was pre-populated.
+fn mount_item_with_vote_data(server: &FakeHnServer) {
+    let html = format!(
+        "<html><body>\n\
+         <a href=\"logout?goto=news&amp;auth=zzz\">logout</a>\n\
+         <a id='up_{STORY_ID}' href='vote?id={STORY_ID}&amp;how=up&amp;auth={FIXTURE_AUTH_TOKEN}'>up</a>\n\
+         </body></html>"
+    );
+    server.mount_get_text("/item", 200, html);
+}
+
+/// Mount `/vote` so the binary's `GET /vote?id=...&how=up&auth=...`
+/// gets a 200 (the response body is unused). The request itself is
+/// what we assert on via `received_requests`.
+fn mount_vote_endpoint(server: &FakeHnServer) {
+    server.mount_get_text("/vote", 200, "");
+}
+
+#[test]
+fn vote_happy_path_sends_get_to_vote_endpoint() {
+    let server = FakeHnServer::start();
+    mount_front_page(&server);
+    mount_item_with_vote_data(&server);
+    mount_vote_endpoint(&server);
+
+    let dirs = TestDirs::new().expect("TestDirs::new");
+    write_test_config(&dirs);
+    write_test_auth(&dirs);
+
+    let opts = SpawnOptions::new()
+        .algolia_base(server.algolia_base())
+        .firebase_base(server.firebase_base())
+        .news_base(server.news_base())
+        .dirs(dirs);
+    let mut handle = spawn_app(opts).expect("spawn_app");
+
+    handle
+        .wait_for_text(STORY_TITLE, FRONT_PAGE_RENDER_TIMEOUT)
+        .expect("front-page fixture should render");
+
+    // Cursive sometimes drops a key sent the same instant raw mode
+    // engages. Mirror the small sleep used in `e2e_login.rs`.
+    std::thread::sleep(Duration::from_millis(200));
+    handle
+        .send_keys("v")
+        .expect("send v (default upvote keybinding)");
+
+    let deadline = Instant::now() + VOTE_REQUEST_TIMEOUT;
+    let mut last_paths: Vec<String> = Vec::new();
+    let query = loop {
+        let requests = server.received_requests();
+        if let Some(req) = requests
+            .iter()
+            .find(|r| r.method.as_str() == "GET" && r.url.path() == "/vote")
+        {
+            break req.url.query().unwrap_or("").to_string();
+        }
+        if Instant::now() >= deadline {
+            last_paths = requests
+                .iter()
+                .map(|r| format!("{} {}", r.method, r.url.path()))
+                .collect();
+            break String::new();
+        }
+        std::thread::sleep(POLL_INTERVAL);
+    };
+
+    assert!(
+        !query.is_empty(),
+        "timed out after {VOTE_REQUEST_TIMEOUT:?} waiting for GET /vote; \
+         observed requests: {last_paths:?}\n--- screen ---\n{}",
+        handle.screen()
+    );
+    assert!(
+        query.contains(&format!("id={STORY_ID}")),
+        "vote URL should carry id={STORY_ID}; saw query: {query:?}"
+    );
+    assert!(
+        query.contains("how=up"),
+        "vote URL should carry how=up; saw query: {query:?}"
+    );
+    assert!(
+        query.contains(&format!("auth={FIXTURE_AUTH_TOKEN}")),
+        "vote URL should carry auth={FIXTURE_AUTH_TOKEN}; saw query: {query:?}"
+    );
+
+    let status = handle.shutdown().expect("clean exit");
+    assert!(status.success(), "expected success exit, got {status:?}");
+}
