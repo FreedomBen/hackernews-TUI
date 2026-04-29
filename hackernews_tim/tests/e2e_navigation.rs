@@ -274,6 +274,16 @@ fn drill_into_comments_and_back_to_front_page() {
     // after the title bar appears, otherwise the back-nav key races the
     // initial draw and gets swallowed.
     std::thread::sleep(Duration::from_millis(200));
+
+    // TEST_PLAN.md §3.2.3 acceptance: PTY-rendered comment-view snapshot.
+    // Same time filter as the front-page snapshot — the fixture has a
+    // fixed `time` epoch but the relative offset drifts.
+    insta::with_settings!({filters => vec![
+        (r"\d+ \w+ ago", "[time ago]"),
+    ]}, {
+        insta::assert_snapshot!("comment_view_after_drilldown_pty", handle.screen());
+    });
+
     handle
         .send_keys("\x7f")
         .expect("send Backspace (goto_previous_view)");

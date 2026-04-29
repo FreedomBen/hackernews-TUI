@@ -1,0 +1,44 @@
+---
+source: hackernews_tim/tests/e2e_navigation.rs
+expression: handle.screen()
+---
+[Y] Hacker News | 1.front_page | 2.story | 3.ask_hn | 4.show_hn | 5.job | 6.threads | search (^S) |
+                                      Comment View - navigation fixture story one
+ navigation fixture story one
+ 250 points | by alice | [time ago] | 0 comments
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                            Hacker News Terminal UI - made by AOME ©                            [?: help] [back] [quit]
