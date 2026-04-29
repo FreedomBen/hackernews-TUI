@@ -137,6 +137,16 @@ fn login_dialog_succeeds_against_fake_backend() {
         .wait_for_text("Log in to Hacker News", DEFAULT_WAIT)
         .expect("login dialog title should appear");
 
+    // TEST_PLAN.md §3.2.6 acceptance: PTY-rendered login dialog snapshot
+    // — empty username/password fields, taken before any text is typed.
+    // Brief sleep lets the dialog finish drawing before capture.
+    std::thread::sleep(Duration::from_millis(150));
+    insta::with_settings!({filters => vec![
+        (r"\d+ \w+ ago", "[time ago]"),
+    ]}, {
+        insta::assert_snapshot!("login_dialog_pty", handle.screen());
+    });
+
     // Initial focus is the username EditView. Tab order is:
     // username → password → Cancel → Log in. Type each field then
     // Tab twice from password to land on "Log in".
